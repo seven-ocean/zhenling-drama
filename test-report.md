@@ -33,42 +33,43 @@
 | 更新场景 | ✅ | PUT /api/v1/scenes/{id} |
 | 删除场景 | ✅ | DELETE /api/v1/scenes/{id} |
 
+### 素材管理 (第2批)
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| 文件上传 | ✅ | POST /api/v1/assets/upload |
+| 素材列表 | ✅ | GET /api/v1/assets/drama/{dramaId} |
+| 素材详情 | ✅ | GET /api/v1/assets/{id} |
+| 删除素材 | ✅ | DELETE /api/v1/assets/{id} |
+| 分页查询 | ✅ | GET /api/v1/assets |
+
 ### 前端页面
 
 | 页面 | 状态 | 备注 |
 |------|------|------|
-| 剧集列表 | ✅ | 卡片展示、分页 |
-| 剧集详情 | ✅ | TAB切换、CRUD |
-| 文件上传 | 待开发 | |
-| AI生成 | 待开发 | |
+| 剧集列表 | ✅ | |
+| 剧集详情 | ✅ | |
+| 文件上传组件 | ✅ | FileUpload.vue |
+| 素材管理 | 待开发 | |
 
 ## 接口测试
 
 ```bash
-# 创建剧集
-curl -X POST http://localhost:8080/api/v1/dramas \
-  -H "Content-Type: application/json" \
-  -d '{"title":"测试剧集","description":"测试描述","totalEpisodes":10}'
+# 上传文件
+curl -X POST http://localhost:8080/api/v1/assets/upload \
+  -F "file=@test.jpg" \
+  -F "dramaId=xxx"
 
-# 获取剧集列表
-curl http://localhost:8080/api/v1/dramas?pageNum=1&pageSize=10
-
-# 获取剧集详情
-curl http://localhost:8080/api/v1/dramas/{id}
+# 获取素材列表
+curl http://localhost:8080/api/v1/assets/drama/xxx
 ```
 
 ## Bug列表
 
 - 无已知 Bug
 
-## 移植验证
+## 移植验证 (第2批)
 
-原项目功能 → 新项目
-
-| 模块 | 状态 |
-|------|------|
-| 剧集管理 | ✅ |
-| 角色管理 | ✅ |
-| 场景管理 | ✅ |
-| 数据库表 | ✅ |
-| 前端基础 | ✅ |
+- 文件上传 ✅
+- 素材管理 ✅
+- 静态文件访问 ✅
