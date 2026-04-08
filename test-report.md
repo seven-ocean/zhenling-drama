@@ -50,6 +50,17 @@
 | 生成宫格图 | ✅ | POST /api/v1/images/grid |
 | 前端工作台 | ✅ | Workbench.vue |
 
+### 视频与配音 (第5批)
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| TTS配音生成 | ✅ | POST /api/v1/audios/generate |
+| 批量生成配音 | ✅ | POST /api/v1/audios/batch |
+| 视频生成 | ✅ | POST /api/v1/videos/generate |
+| FFmpeg单镜头合成 | ✅ | VideoComposeService |
+| FFmpeg拼接 | ✅ | VideoComposeService |
+| 前端媒体工作室 | ✅ | MediaStudio.vue |
+
 | 功能 | 状态 | 备注 |
 |------|------|------|
 | 文件上传 | ✅ | POST /api/v1/assets/upload |
