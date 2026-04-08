@@ -119,6 +119,16 @@ spring:
 | POST | /api/v1/scenes | 创建场景 |
 | GET | /api/v1/scenes/drama/{dramaId} | 场景列表 |
 
+## 素材上传 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | /api/v1/assets/upload | 上传文件 |
+| GET | /api/v1/assets/drama/{dramaId} | 素材列表 |
+| GET | /api/v1/assets | 分页查询 |
+| GET | /api/v1/assets/{id} | 素材详情 |
+| DELETE | /api/v1/assets/{id} | 删除素材 |
+
 ## 常见问题
 
 ### Q: 启动报错端口被占用？
