@@ -33,7 +33,22 @@
 | 更新场景 | ✅ | PUT /api/v1/scenes/{id} |
 | 删除场景 | ✅ | DELETE /api/v1/scenes/{id} |
 
-### 素材管理 (第2批)
+### AI分镜拆解 (第4批)
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| AI自动拆解剧本 | ✅ | POST /api/v1/storyboards/generate |
+| 生成宫格提示词 | ✅ | POST /api/v1/storyboards/grid-prompt |
+| 分镜列表查询 | ✅ | GET /api/v1/storyboards/drama/{id}/episode/{ep} |
+
+### AI图片生成 (第4批)
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| 生成角色图 | ✅ | POST /api/v1/images/character |
+| 生成场景图 | ✅ | POST /api/v1/images/scene |
+| 生成宫格图 | ✅ | POST /api/v1/images/grid |
+| 前端工作台 | ✅ | Workbench.vue |
 
 | 功能 | 状态 | 备注 |
 |------|------|------|
