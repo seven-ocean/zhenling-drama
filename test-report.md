@@ -61,6 +61,34 @@
 | FFmpeg拼接 | ✅ | VideoComposeService |
 | 前端媒体工作室 | ✅ | MediaStudio.vue |
 
+### 页面整合 (第6批)
+
+| 页面 | 状态 | 备注 |
+|------|------|------|
+| 路由配置 | ✅ | router/index.ts |
+| 导航布局 | ✅ | App.vue |
+| 剧集列表 | ✅ | DramaList |
+| 剧集详情 | ✅ | DramaDetail |
+| 工作台 | ✅ | Workbench |
+| 媒体工作室 | ✅ | MediaStudio |
+| AI配置 | ✅ | AiConfig |
+
+---
+
+## 移植完成 ✅
+
+原项目：https://github.com/chatfire-AI/huobao-drama.git
+
+| 指标 | 结果 |
+|------|------|
+| 技术栈转换 | Node.js → Java 17 / Nuxt → Vue3 |
+| 后端架构 | SpringBoot 3.x + MyBatis Plus |
+| 前端架构 | Vue3 + Vite + ofetch + Tailwind |
+| 数据库 | MySQL 8.0 + Redis |
+| API完整性 | 30+ 接口 |
+| 前端页面 | 6个页面 |
+| 文档完备 | 5份 |
+
 | 功能 | 状态 | 备注 |
 |------|------|------|
 | 文件上传 | ✅ | POST /api/v1/assets/upload |
