@@ -43,7 +43,18 @@
 | 删除素材 | ✅ | DELETE /api/v1/assets/{id} |
 | 分页查询 | ✅ | GET /api/v1/assets |
 
-### 前端页面
+### AI配置 (第3批)
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| 创建配置 | ✅ | POST /api/v1/ai-configs |
+| 配置列表 | ✅ | GET /api/v1/ai-configs/type/{apiType} |
+| 配置详情 | ✅ | GET /api/v1/ai-configs/{id} |
+| 更新配置 | ✅ | PUT /api/v1/ai-configs/{id} |
+| 删除配置 | ✅ | DELETE /api/v1/ai-configs/{id} |
+| 启用/禁用 | ✅ | PATCH /api/v1/ai-configs/{id}/toggle |
+| AI适配器 | ✅ | OpenAI/MiniMax |
+| 前端配置页 | ✅ | AiConfig.vue |
 
 | 页面 | 状态 | 备注 |
 |------|------|------|
