@@ -1,0 +1,21 @@
+# Build and dependency directories
+backend/target
+frontend/node_modules
+
+# Temporary directories
+tmp
+
+# IDE files
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
