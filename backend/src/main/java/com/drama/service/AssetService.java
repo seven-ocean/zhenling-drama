@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 素材服务
+ * 素材服务 - 文件上传/管理
  */
 @Slf4j
 @Service
@@ -38,6 +38,9 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
+    /**
+     * 上传文件
+     */
     @Transactional
     public Asset upload(MultipartFile file, String dramaId, String type) {
         if (file == null || file.isEmpty()) {
@@ -48,7 +51,7 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
         String datePath = LocalDateTime.now().format(DATE_FORMAT);
         String filename = file.getOriginalFilename();
         String ext = getExtension(filename);
-        String newFilename = UUID.randomUUID().toString() + ext;
+        String newFilename = UUID.randomUUID() + ext;
         
         // 确保目录存在
         String basePath = fileConfig.getPath();
@@ -76,14 +79,17 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
         Integer height = null;
         if (mimeType != null && mimeType.startsWith("image/")) {
             try {
-                var meta = new org.springframework.core.io.support.PropertySource<org.springframework.core.env.Environment>("");
-                // 简化处理
+                java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(fullPath.toFile());
+                if (image != null) {
+                    width = image.getWidth();
+                    height = image.getHeight();
+                }
             } catch (Exception e) {
-                // ignore
+                log.debug("Failed to read image dimensions: {}", e.getMessage());
             }
         }
 
-        // 保存记录
+        // 保存记录到数据库
         Asset asset = new Asset();
         asset.setId(IdUtils.randomId());
         asset.setDramaId(dramaId);
@@ -105,10 +111,13 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
         return asset;
     }
 
+    /**
+     * 按剧集查询素材
+     */
     public List<Asset> listByDramaId(String dramaId, String type) {
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Asset::getDramaId, dramaId);
-        wrapper.eq(Asset::getDeleted, 0);
+        wrapper.eq(Asset::getDramaId, dramaId)
+               .eq(Asset::getDeleted, 0);
         
         if (StringUtils.hasText(type)) {
             wrapper.eq(Asset::getType, type);
@@ -118,6 +127,9 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
         return this.list(wrapper);
     }
 
+    /**
+     * 分页查询
+     */
     public Page<Asset> page(int pageNum, int pageSize, String dramaId, String type) {
         Page<Asset> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
@@ -134,6 +146,10 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
         return this.page(page, wrapper);
     }
 
+    /**
+     * 删除素材
+     */
+    @Transactional
     public void delete(String id) {
         Asset asset = this.getById(id);
         if (asset == null || asset.getDeleted() == 1) {

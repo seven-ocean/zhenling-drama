@@ -47,7 +47,7 @@ public class SceneService extends ServiceImpl<SceneMapper, Scene> {
     }
 
     public Scene getById(String id) {
-        Scene scene = this.getById(id);
+        Scene scene = super.getById(id);
         if (scene == null || scene.getDeleted() == 1) {
             throw new BusinessException(ResultCode.NOT_FOUND, "场景不存在");
         }

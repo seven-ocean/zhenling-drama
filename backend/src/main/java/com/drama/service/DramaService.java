@@ -68,7 +68,7 @@ public class DramaService extends ServiceImpl<DramaMapper, Drama> {
      * 获取详情
      */
     public Drama getById(String id) {
-        Drama drama = this.getById(id);
+        Drama drama = super.getById(id);
         if (drama == null || drama.getDeleted() == 1) {
             throw new BusinessException(ResultCode.NOT_FOUND, "剧集不存在");
         }

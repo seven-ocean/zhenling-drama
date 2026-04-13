@@ -48,7 +48,7 @@ public class CharacterService extends ServiceImpl<CharacterMapper, Character> {
     }
 
     public Character getById(String id) {
-        Character character = this.getById(id);
+        Character character = super.getById(id);
         if (character == null || character.getDeleted() == 1) {
             throw new BusinessException(ResultCode.NOT_FOUND, "角色不存在");
         }

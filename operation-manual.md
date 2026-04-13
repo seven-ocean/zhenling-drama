@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-火宝短剧 (Huobao Drama) 是一个基于 AI 的短剧自动化生产平台，实现从剧本生成、角色设计、分镜制作到视频合成的全流程自动化。
+臻灵短剧 (Zhenling Drama) 是一个基于 AI 的短剧自动化生产平台，实现从剧本生成、角色设计、分镜制作到视频合成的全流程自动化。
 
 ## 技术栈
 
@@ -30,7 +30,7 @@
 mysql -u root -p
 
 # 创建数据库
-CREATE DATABASE huobao_drama DEFAULT CHARACTER SET utf8mb4;
+CREATE DATABASE zhenling_drama DEFAULT CHARACTER SET utf8mb4;
 
 # 执行建表 SQL
 source sql/init.sql
@@ -56,7 +56,7 @@ mvn spring-boot:run
 
 # 或打包后启动
 mvn package
-java -jar target/huobao-drama-1.0.0.jar
+java -jar target/zhenling-drama-1.0.0.jar
 ```
 
 ### 4. 启动前端
@@ -81,9 +81,9 @@ npm run build
 ```yaml
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/huobao_drama
+    url: jdbc:mysql://localhost:3306/zhenling_drama
     username: root
-    password: root
+    password: your_password
   data:
     redis:
       host: localhost
@@ -95,7 +95,7 @@ spring:
 ```yaml
 spring:
   datasource:
-    url: jdbc:mysql://your-host:3306/huobao_drama
+    url: jdbc:mysql://your-host:3306/zhenling_drama
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
   data:

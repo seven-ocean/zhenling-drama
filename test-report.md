@@ -77,7 +77,7 @@
 
 ## 移植完成 ✅
 
-原项目：https://github.com/chatfire-AI/huobao-drama.git
+原项目：https://github.com/chatfire-AI/zhenling-drama.git
 
 | 指标 | 结果 |
 |------|------|

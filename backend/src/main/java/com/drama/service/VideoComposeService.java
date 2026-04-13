@@ -4,6 +4,8 @@ import com.drama.common.BusinessException;
 import com.drama.common.IdUtils;
 import com.drama.common.ResultCode;
 import com.drama.entity.Video;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ public class VideoComposeService {
 
     private static final String FFMPEG_PATH = "ffmpeg";
     private static final String FFPROBE_PATH = "ffprobe";
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 检查FFmpeg是否可用
@@ -199,9 +202,44 @@ public class VideoComposeService {
                 sb.append(line);
             }
 
-            // 简化解析
+            // 解析 ffprobe JSON 输出
+            String jsonOutput = sb.toString();
             VideoInfo info = new VideoInfo();
             info.setPath(videoPath);
+
+            if (!jsonOutput.isEmpty()) {
+                try {
+                    JsonNode root = objectMapper.readTree(jsonOutput);
+
+                    // 从 format 获取 duration / bitrate
+                    JsonNode format = root.path("format");
+                    if (!format.isMissingNode()) {
+                        double dur = format.path("duration").asDouble(0);
+                        info.setDuration(dur > 0 ? (float) dur : null);
+                        long bitRate = format.path("bit_rate").asLong(0L);
+                        info.setBitrate(bitRate > 0 ? bitRate : null);
+                    }
+
+                    // 遍历 streams 找到视频流
+                    JsonNode streams = root.path("streams");
+                    if (streams.isArray()) {
+                        for (JsonNode stream : streams) {
+                            String codecType = stream.path("codec_type").asText("");
+                            if ("video".equals(codecType)) {
+                                int w = stream.path("width").asInt(0);
+                                int h = stream.path("height").asInt(0);
+                                info.setWidth(w > 0 ? w : null);
+                                info.setHeight(h > 0 ? h : null);
+                                String codec = stream.path("codec_name").asText("");
+                                if (!codec.isEmpty()) info.setCodec(codec);
+                                break; // 取第一个视频流即可
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse ffprobe JSON: {}", e.getMessage());
+                }
+            }
             return info;
         } catch (Exception e) {
             log.error("Get video info failed: {}", e.getMessage());
