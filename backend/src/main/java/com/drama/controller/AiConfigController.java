@@ -25,6 +25,14 @@ public class AiConfigController {
         return R.ok(aiConfigService.create(config));
     }
 
+    /**
+     * 获取所有未删除配置（管理页使用，包含禁用的）
+     */
+    @GetMapping
+    public R<List<AiConfig>> listAll() {
+        return R.ok(aiConfigService.listAll());
+    }
+
     @GetMapping("/type/{apiType}")
     public R<List<AiConfig>> listByType(@PathVariable String apiType) {
         return R.ok(aiConfigService.listByType(apiType));
@@ -35,7 +43,7 @@ public class AiConfigController {
         return R.ok(aiConfigService.getById(id));
     }
 
-    @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public R<AiConfig> update(@PathVariable String id, @RequestBody AiConfig config) {
         config.setId(id);
         return R.ok(aiConfigService.update(config));
@@ -47,7 +55,7 @@ public class AiConfigController {
         return R.ok();
     }
 
-    @PatchMapping("/{id}/toggle")
+    @PostMapping("/{id}/toggle")
     public R<Void> toggle(@PathVariable String id, @RequestParam boolean enabled) {
         aiConfigService.toggle(id, enabled);
         return R.ok();

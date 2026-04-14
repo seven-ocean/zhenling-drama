@@ -50,7 +50,7 @@ public class DramaController {
     /**
      * 更新剧集
      */
-    @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public R<Drama> update(@PathVariable String id, @RequestBody Drama drama) {
         drama.setId(id);
         return R.ok(dramaService.update(drama));
@@ -68,7 +68,7 @@ public class DramaController {
     /**
      * 更新状态
      */
-    @PatchMapping("/{id}/status")
+    @PostMapping("/{id}/status")
     public R<Void> updateStatus(@PathVariable String id, @RequestParam String status) {
         dramaService.updateStatus(id, status);
         return R.ok();

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 音频服务
@@ -52,5 +53,53 @@ public class AudioService extends ServiceImpl<AudioMapper, Audio> {
         wrapper.eq(Audio::getStoryboardId, storyboardId);
         wrapper.eq(Audio::getDeleted, 0);
         return this.list(wrapper);
+    }
+
+    /**
+     * 查询剧集下所有配音
+     */
+    public List<Audio> listByDrama(String dramaId) {
+        LambdaQueryWrapper<Audio> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Audio::getDramaId, dramaId)
+               .eq(Audio::getDeleted, 0)
+               .orderByDesc(Audio::getCreatedAt);
+        return this.list(wrapper);
+    }
+
+    /**
+     * 删除音频（逻辑删除）
+     */
+    @Transactional
+    public void delete(String id) {
+        Audio existing = super.getById(id);
+        if (existing == null || existing.getDeleted() == 1) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "音频记录不存在");
+        }
+        existing.setDeleted(1);
+        this.updateById(existing);
+        log.info("Deleted audio: {}", id);
+    }
+
+    /**
+     * 更新音频信息
+     */
+    @Transactional
+    public Audio update(String id, Map<String, Object> data) {
+        Audio audio = super.getById(id);
+        if (audio == null || audio.getDeleted() == 1) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "音频记录不存在");
+        }
+        if (data.containsKey("audioUrl")) audio.setAudioUrl((String) data.get("audioUrl"));
+        if (data.containsKey("status")) audio.setStatus((String) data.get("status"));
+        if (data.containsKey("duration")) {
+            Object d = data.get("duration");
+            if (d instanceof Number) audio.setDuration(((Number) d).floatValue());
+        }
+        if (data.containsKey("errorMessage")) audio.setErrorMessage((String) data.get("errorMessage"));
+        if (data.containsKey("extraData")) audio.setExtraData(data.get("extraData") != null ? data.get("extraData").toString() : null);
+
+        audio.setUpdatedAt(LocalDateTime.now());
+        this.updateById(audio);
+        return audio;
     }
 }

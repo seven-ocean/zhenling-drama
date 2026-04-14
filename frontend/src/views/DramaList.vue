@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { dramaApi } from '@/utils/request'
 import { useRouter } from 'vue-router'
+import { message as AMessage } from 'ant-design-vue'
 import {
   PlusOutlined,
   VideoCameraOutlined,
@@ -12,18 +13,27 @@ const router = useRouter()
 
 const dramas = ref<any[]>([])
 const loading = ref(false)
+const errorMsg = ref('')
 const pageNum = ref(1)
 const pageSize = ref(10)
 
 const loadDramas = async () => {
   loading.value = true
+  errorMsg.value = ''
   try {
     const res = await dramaApi.list({ pageNum: pageNum.value, pageSize: pageSize.value })
     if (res.code === 200) {
-      dramas.value = res.data.records || []
+      const pageData = res.data
+      // 兼容后端返回 IPage（records 字段）或数组
+      dramas.value = pageData?.records || (Array.isArray(pageData) ? pageData : [])
+    } else {
+      errorMsg.value = res.message || '加载剧集失败'
+      AMessage.error(errorMsg.value)
     }
-  } catch (e) {
-    console.error(e)
+  } catch (e: any) {
+    errorMsg.value = e?.message || '网络异常，请检查后端服务是否启动（端口8080）'
+    console.error('加载剧集失败:', e)
+    AMessage.error(errorMsg.value)
   } finally {
     loading.value = false
   }
@@ -52,6 +62,15 @@ onMounted(() => {
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-20">
       <a-spin size="large" tip="加载中..." />
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="errorMsg" class="flex flex-col items-center justify-center py-20">
+      <a-result status="error" :title="errorMsg" class="!text-[#808080]">
+        <template #extra>
+          <a-button type="primary" @click="loadDramas">重试</a-button>
+        </template>
+      </a-result>
     </div>
 
     <!-- Empty -->

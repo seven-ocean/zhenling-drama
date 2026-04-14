@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { dramaApi, characterApi, sceneApi, storyboardApi } from '@/utils/request'
 import { useDramaStore } from '@/stores/drama'
@@ -13,7 +13,15 @@ import {
   RobotOutlined,
   SendOutlined,
   PictureOutlined,
+  UserOutlined,
+  AppstoreOutlined,
+  SettingOutlined,
+  UploadOutlined,
+  FolderOpenOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons-vue'
+import { storageApi } from '@/utils/storage'
+import { assetApi } from '@/utils/asset'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,22 +29,24 @@ const store = useDramaStore()
 
 const loading = ref(false)
 const saving = ref(false)
+const loadError = ref('')
 
 const isNew = computed(() => route.params.id === 'new')
 
 // Tab state
 const activeTab = ref('characters')
 const tabs = [
-  { key: 'characters', label: '角色' },
-  { key: 'scenes', label: '场景' },
-  { key: 'storyboards', label: '分镜' },
-  { key: 'settings', label: '设置' },
+  { key: 'characters', label: '角色', icon: UserOutlined },
+  { key: 'scenes', label: '场景', icon: AppstoreOutlined },
+  { key: 'storyboards', label: '分镜', icon: PictureOutlined },
+  { key: 'settings', label: '设置', icon: SettingOutlined },
 ]
 
 // ====== 数据加载 ======
 const loadData = async () => {
   if (isNew.value) return
   loading.value = true
+  loadError.value = ''
   try {
     const [dramaRes, charRes, sceneRes] = await Promise.all([
       dramaApi.get(route.params.id as string),
@@ -45,11 +55,16 @@ const loadData = async () => {
     ])
     if (dramaRes.code === 200) {
       store.setDrama(dramaRes.data)
+    } else {
+      throw new Error(dramaRes.message || '加载剧集失败')
     }
     if (charRes.code === 200) store.setCharacters(charRes.data || [])
     if (sceneRes.code === 200) store.setScenes(sceneRes.data || [])
-  } catch (e) {
-    AMessage.error('加载数据失败')
+  } catch (e: any) {
+    const msg = e?.message || '加载数据失败，请检查后端服务是否启动（端口8080）'
+    loadError.value = msg
+    console.error('加载剧集详情失败:', e)
+    AMessage.error(msg)
   } finally {
     loading.value = false
   }
@@ -74,9 +89,26 @@ const saveDrama = async () => {
   }
 }
 
+// 初始化（新建模式或加载已有数据）
+const initPage = () => {
+  loadError.value = ''
+  if (isNew.value) {
+    // 新建剧集：重置 store 并设置默认值
+    store.reset()
+    store.setDrama({ title: '', description: '', totalEpisodes: 1 })
+  } else {
+    // 编辑模式：加载数据
+    loadData()
+  }
+}
+
 onMounted(() => {
-  if (!isNew.value) loadData()
-  else store.setDrama({ title: '', description: '', totalEpisodes: 1 })
+  initPage()
+})
+
+// 监听路由变化（从 /drama/xxx → /drama/new 或反向切换时重新初始化）
+watch(() => route.params.id, () => {
+  initPage()
 })
 
 // ====== 角色管理 ======
@@ -236,6 +268,68 @@ const statusOptions = [
   { v: 'in_progress', l: '制作中' },
   { v: 'completed', l: '已完成' },
 ]
+
+// ====== 图片选择器（角色/场景弹窗共用）======
+const imagePickerOpen = ref(false)
+const imagePickerTarget = ref<'char' | 'scene'>('char')
+const imageAssets = ref<any[]>([])
+const loadingImages = ref(false)
+
+const openImagePicker = (target: 'char' | 'scene') => {
+  imagePickerTarget.value = target
+  imagePickerOpen.value = true
+  loadImageAssets()
+}
+
+const loadImageAssets = async () => {
+  loadingImages.value = true
+  try {
+    const res = await assetApi.page({ pageNum: 1, pageSize: 50 })
+    if (res.code === 200) {
+      const list = res.data?.records || res.data || []
+      imageAssets.value = list.filter((a: any) => a.type === 'image')
+    }
+  } catch (e) { console.error('Load images failed:', e) }
+  finally { loadingImages.value = false }
+}
+
+// 从存储中选择图片
+const selectImage = (asset: any) => {
+  if (imagePickerTarget.value === 'char') charForm.value.imageUrl = asset.fileUrl
+  else sceneForm.value.imageUrl = asset.fileUrl
+  imagePickerOpen.value = false
+}
+
+// 上传图片并自动填入 URL
+const charFileInput = ref<HTMLInputElement | null>(null)
+const sceneFileInput = ref<HTMLInputElement | null>(null)
+
+const uploadAndSetImage = async (event: Event, target: 'char' | 'scene') => {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const file = input.files[0]
+  if (!file.type.startsWith('image/')) { AMessage.warning('请选择图片文件'); return }
+  try {
+    const res = await storageApi.upload(file, undefined, 'image')
+    if (res.code === 200 && res.data?.fileUrl) {
+      if (target === 'char') charForm.value.imageUrl = res.data.fileUrl
+      else sceneForm.value.imageUrl = res.data.fileUrl
+      AMessage.success('图片已上传')
+    } else {
+      throw new Error('上传返回异常')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '上传失败')
+  } finally {
+    input.value = ''
+  }
+}
+
+// 清除已选图片
+const clearImageUrl = (target: 'char' | 'scene') => {
+  if (target === 'char') charForm.value.imageUrl = ''
+  else sceneForm.value.imageUrl = ''
+}
 </script>
 
 <template>
@@ -263,42 +357,42 @@ const statusOptions = [
       </a-button>
     </div>
 
-    <!-- ========== 新建剧集表单（核心修复：确保条件渲染正确） ========== -->
+    <!-- ========== 加载错误（非新建时） ========== -->
+    <div v-if="!isNew && loadError" class="flex flex-col items-center justify-center py-20">
+      <a-result status="warning" :title="loadError" class="!text-[#808080]">
+        <template #extra>
+          <a-button type="primary" @click="loadData">重试</a-button>
+          <a-button @click="router.push('/dramas')">返回列表</a-button>
+        </template>
+      </a-result>
+    </div>
+
+    <!-- ========== 剧集不存在（加载完成但数据为空） ========== -->
+    <div v-if="!isNew && !loading && !loadError && !store.currentDrama" class="flex flex-col items-center justify-center py-20">
+      <a-result status="404" title="剧集不存在或已被删除">
+        <template #extra>
+          <a-button type="primary" @click="router.push('/dramas')">返回剧集列表</a-button>
+          <a-button @click="router.push('/drama/new')">新建剧集</a-button>
+        </template>
+      </a-result>
+    </div>
+
+    <!-- ========== 新建剧集表单 ========== -->
     <div v-if="isNew && store.currentDrama" class="max-w-xl mx-auto">
       <div class="bg-[#1a1a1a] rounded-2xl border border-[#2a2a2a] p-6 sm:p-8 space-y-6">
         <div>
           <label class="block text-sm text-[#a0a0a0] mb-2">剧集标题 <span class="text-red-400">*</span></label>
-          <a-input
-            v-model:value="store.currentDrama.title"
-            placeholder="输入剧集标题"
-            size="large"
-          />
+          <a-input v-model:value="store.currentDrama.title" placeholder="输入剧集标题" size="large" />
         </div>
         <div>
           <label class="block text-sm text-[#a0a0a0] mb-2">剧集描述</label>
-          <a-textarea
-            v-model:value="store.currentDrama.description"
-            placeholder="输入剧集描述"
-            :rows="4"
-          />
+          <a-textarea v-model:value="store.currentDrama.description" placeholder="输入剧集描述" :rows="4" />
         </div>
         <div>
           <label class="block text-sm text-[#a0a0a0] mb-2">总集数</label>
-          <a-input-number
-            v-model:value="store.currentDrama.totalEpisodes"
-            :min="1"
-            size="large"
-            class="w-full"
-          />
+          <a-input-number v-model:value="store.currentDrama.totalEpisodes" :min="1" size="large" class="w-full" />
         </div>
-        <a-button
-          type="primary"
-          size="large"
-          block
-          :loading="saving"
-          :disabled="!store.currentDrama?.title"
-          @click="saveDrama"
-        >
+        <a-button type="primary" size="large" block :loading="saving" :disabled="!store.currentDrama?.title" @click="saveDrama">
           <template #icon><SendOutlined /></template>
           {{ saving ? '创建中...' : '创建剧集' }}
         </a-button>
@@ -306,20 +400,26 @@ const statusOptions = [
     </div>
 
     <!-- ========== 剧集详情 Tabs ========== -->
-    <div v-else-if="!isNew" class="w-full">
+    <div v-else-if="!isNew && !loadError && store.currentDrama" class="w-full">
       <!-- Tab Bar -->
       <div class="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
-        <button
+        <a-button
           v-for="tab in tabs"
           :key="tab.key"
           @click="activeTab = tab.key"
-          :class="['tab-btn', { active: activeTab === tab.key }]"
+          :type="activeTab === tab.key ? 'primary' : 'default'"
+          size="small"
+          :class="[
+            '!rounded-xl !font-medium whitespace-nowrap shrink-0',
+            activeTab !== tab.key && '!bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0] hover:!text-[#f5f5f5] hover:!bg-[#242424]'
+          ]"
         >
+          <template #icon><component :is="tab.icon" /></template>
           {{ tab.label }}
-          <span v-if="tab.key === 'characters' && store.characters.length" class="ml-1.5 px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{{ store.characters.length }}</span>
-          <span v-if="tab.key === 'scenes' && store.scenes.length" class="ml-1.5 px-1.5 bg-white/20 rounded-full text-xs">{{ store.scenes.length }}</span>
-          <span v-if="tab.key === 'storyboards' && sbList.length" class="ml-1.5 px-1.5 bg-white/20 rounded-full text-xs">{{ sbList.length }}</span>
-        </button>
+          <span v-if="tab.key === 'characters' && store.characters.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ store.characters.length }}</span>
+          <span v-if="tab.key === 'scenes' && store.scenes.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ store.scenes.length }}</span>
+          <span v-if="tab.key === 'storyboards' && sbList.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ sbList.length }}</span>
+        </a-button>
       </div>
 
       <!-- ========== Characters Tab ========== -->
@@ -379,9 +479,7 @@ const statusOptions = [
                 <PictureOutlined style="font-size: 32px;" />
               </div>
               <a-popconfirm title="确定删除该场景？" ok-text="确定" cancel-text="取消" @confirm="deleteScene(scene.id)">
-                <button
-                  class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all"
-                >
+                <button class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all">
                   <DeleteOutlined style="font-size: 14px;" />
                 </button>
               </a-popconfirm>
@@ -405,20 +503,10 @@ const statusOptions = [
             <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
             AI 自动拆解剧本
           </h4>
-          <a-textarea
-            v-model:value="scriptText"
-            placeholder="粘贴剧本内容，AI将自动拆解为分镜..."
-            :rows="4"
-            class="mb-3"
-          />
+          <a-textarea v-model:value="scriptText" placeholder="粘贴剧本内容，AI将自动拆解为分镜..." :rows="4" class="mb-3" />
           <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <p class="text-xs text-[#606060]">支持中英文剧本，自动识别角色、场景、镜头类型</p>
-            <a-button
-              type="primary"
-              :loading="generatingSb"
-              :disabled="!scriptText.trim()"
-              @click="generateStoryboards"
-            >
+            <a-button type="primary" :loading="generatingSb" :disabled="!scriptText.trim()" @click="generateStoryboards">
               <template #icon><RobotOutlined /></template>
               {{ generatingSb ? 'AI拆解中...' : 'AI拆解分镜' }}
             </a-button>
@@ -431,16 +519,11 @@ const statusOptions = [
             分镜列表
             <span v-if="sbList.length" class="text-sm font-normal text-[#808080] ml-2">({{ sbList.length }}个镜头)</span>
           </h3>
-          <a-button
-            v-if="sbList.length > 0"
-            @click="router.push(`/workbench/${route.params.id}`)"
-          >
-            进入工作台 →
-          </a-button>
+          <a-button v-if="sbList.length > 0" @click="router.push(`/workbench/${route.params.id}`)">进入工作台 →</a-button>
         </div>
 
         <div v-if="sbList.length === 0" class="text-center py-16 text-[#606060]">
-          <a-empty description="暂无分镜，输入剧本后点击 AI拆解" />
+          <a-empty description="暂无分镜，输入剧本后点击 AI 拆解" />
         </div>
 
         <div v-else class="space-y-3">
@@ -464,9 +547,7 @@ const statusOptions = [
             <!-- 操作 -->
             <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity">
               <a-popconfirm title="确定删除该分镜？" ok-text="确定" cancel-text="取消" @confirm="deleteShot(shot.id)">
-                <a-button type="text" danger size="small">
-                  <template #icon><DeleteOutlined /></template>
-                </a-button>
+                <a-button type="text" danger size="small"><template #icon><DeleteOutlined /></template></a-button>
               </a-popconfirm>
             </div>
           </div>
@@ -496,13 +577,7 @@ const statusOptions = [
               <a-radio-button v-for="s in statusOptions" :key="s.v" :value="s.v">{{ s.l }}</a-radio-button>
             </a-radio-group>
           </div>
-          <a-button
-            type="primary"
-            size="large"
-            block
-            :loading="saving"
-            @click="saveDrama"
-          >
+          <a-button type="primary" size="large" block :loading="saving" @click="saveDrama">
             <template #icon><SaveOutlined /></template>
             {{ saving ? '保存中...' : '保存修改' }}
           </a-button>
@@ -516,59 +591,51 @@ const statusOptions = [
     </div>
 
     <!-- ====== 角色弹窗 ====== -->
-    <a-modal
-      v-model:open="charModalOpen"
-      :title="editingChar ? '编辑角色' : '添加角色'"
-      @ok="saveChar"
-      :okButtonProps="{ disabled: !charForm.name?.trim() }"
-      okText="创建"
-      :cancelText="'取消'"
-      width="480px"
-      destroyOnClose
-    >
+    <a-modal v-model:open="charModalOpen" :title="editingChar ? '编辑角色' : '添加角色'"
+      @ok="saveChar" :okButtonProps="{ disabled: !charForm.name?.trim() }" okText="创建" :cancelText="'取消'" width="500px" destroyOnClose>
       <div class="space-y-4 pt-2">
         <a-form layout="vertical">
-          <a-form-item label="名称" required>
-            <a-input v-model:value="charForm.name" placeholder="角色名称" />
-          </a-form-item>
-          <a-form-item label="描述">
-            <a-textarea v-model:value="charForm.description" placeholder="角色背景描述..." :rows="2" />
-          </a-form-item>
+          <a-form-item label="名称" required><a-input v-model:value="charForm.name" placeholder="角色名称" /></a-form-item>
+          <a-form-item label="描述"><a-textarea v-model:value="charForm.description" placeholder="角色背景描述..." :rows="2" /></a-form-item>
           <div class="grid grid-cols-2 gap-3">
-            <a-form-item label="外观提示词">
-              <a-input v-model:value="charForm.appearancePrompt" placeholder="用于AI生成角色图" />
-            </a-form-item>
-            <a-form-item label="台词风格">
-              <a-input v-model:value="charForm.dialogueStyle" placeholder="如：温柔/霸道/幽默" />
-            </a-form-item>
+            <a-form-item label="外观提示词"><a-input v-model:value="charForm.appearancePrompt" placeholder="用于AI生成角色图" /></a-form-item>
+            <a-form-item label="台词风格"><a-input v-model:value="charForm.dialogueStyle" placeholder="如：温柔/霸道/幽默" /></a-form-item>
           </div>
-          <a-form-item label="图片URL（可选）">
-            <a-input v-model:value="charForm.imageUrl" placeholder="https://..." />
+
+          <!-- ====== 角色形象图（从存储选 + 上传） ====== -->
+          <a-form-item label="角色形象图">
+            <!-- 已选预览 -->
+            <div v-if="charForm.imageUrl" class="relative rounded-lg overflow-hidden bg-[#242424] border border-[#333]">
+              <img :src="charForm.imageUrl" class="w-full h-32 object-cover" />
+              <button type="button" @click="clearImageUrl('char')"
+                class="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/50 text-red-400 hover:bg-red-500/80 transition-all">
+                <CloseCircleOutlined style="font-size: 16px;" />
+              </button>
+            </div>
+            <!-- 操作按钮 -->
+            <div class="flex gap-2 mt-2">
+              <a-button size="small" @click="openImagePicker('char')" class="!flex-1">
+                <template #icon><FolderOpenOutlined /></template>从存储选择
+              </a-button>
+              <a-button size="small" @click="charFileInput?.click()" class="!flex-1">
+                <template #icon><UploadOutlined /></template>上传图片
+              </a-button>
+              <input ref="charFileInput" type="file" accept="image/*" class="hidden"
+                     @change="(e) => uploadAndSetImage(e, 'char')" />
+            </div>
           </a-form-item>
         </a-form>
       </div>
     </a-modal>
 
     <!-- ====== 场景弹窗 ====== -->
-    <a-modal
-      v-model:open="sceneModalOpen"
-      :title="editingScene ? '编辑场景' : '添加场景'"
-      @ok="saveScene"
-      :okButtonProps="{ disabled: !sceneForm.name?.trim() }"
-      okText="创建"
-      cancelText="取消"
-      width="480px"
-      destroyOnClose
-    >
+    <a-modal v-model:open="sceneModalOpen" :title="editingScene ? '编辑场景' : '添加场景'"
+      @ok="saveScene" :okButtonProps="{ disabled: !sceneForm.name?.trim() }" okText="创建" cancelText="取消" width="500px" destroyOnClose>
       <div class="space-y-4 pt-2">
         <a-form layout="vertical">
-          <a-form-item label="场景名称" required>
-            <a-input v-model:value="sceneForm.name" placeholder="如：咖啡厅 / 教室 / 天台" />
-          </a-form-item>
+          <a-form-item label="场景名称" required><a-input v-model:value="sceneForm.name" placeholder="如：咖啡厅 / 教室 / 天台" /></a-form-item>
           <div class="grid grid-cols-2 gap-3">
-            <a-form-item label="地点">
-              <a-input v-model:value="sceneForm.location" placeholder="如：市中心 / 郊外" />
-            </a-form-item>
+            <a-form-item label="地点"><a-input v-model:value="sceneForm.location" placeholder="如：市中心 / 郊外" /></a-form-item>
             <a-form-item label="时间">
               <a-select v-model:value="sceneForm.timeOfDay" allowClear placeholder="不限">
                 <a-select-option value="白天">白天</a-select-option>
@@ -580,29 +647,37 @@ const statusOptions = [
               </a-select>
             </a-form-item>
           </div>
-          <a-form-item label="描述">
-            <a-textarea v-model:value="sceneForm.description" placeholder="环境描述..." :rows="2" />
-          </a-form-item>
-          <a-form-item label="AI生成提示词">
-            <a-input v-model:value="sceneForm.prompt" placeholder="用于AI生成场景图" />
-          </a-form-item>
-          <a-form-item label="图片URL（可选）">
-            <a-input v-model:value="sceneForm.imageUrl" placeholder="https://..." />
+          <a-form-item label="描述"><a-textarea v-model:value="sceneForm.description" placeholder="环境描述..." :rows="2" /></a-form-item>
+          <a-form-item label="AI生成提示词"><a-input v-model:value="sceneForm.prompt" placeholder="用于AI生成场景图" /></a-form-item>
+
+          <!-- ====== 场景图（从存储选 + 上传） ====== -->
+          <a-form-item label="场景图片">
+            <!-- 已选预览 -->
+            <div v-if="sceneForm.imageUrl" class="relative rounded-lg overflow-hidden bg-[#242424] border border-[#333]">
+              <img :src="sceneForm.imageUrl" class="w-full h-32 object-cover" />
+              <button type="button" @click="clearImageUrl('scene')"
+                class="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/50 text-red-400 hover:bg-red-500/80 transition-all">
+                <CloseCircleOutlined style="font-size: 16px;" />
+              </button>
+            </div>
+            <!-- 操作按钮 -->
+            <div class="flex gap-2 mt-2">
+              <a-button size="small" @click="openImagePicker('scene')" class="!flex-1">
+                <template #icon><FolderOpenOutlined /></template>从存储选择
+              </a-button>
+              <a-button size="small" @click="sceneFileInput?.click()" class="!flex-1">
+                <template #icon><UploadOutlined /></template>上传图片
+              </a-button>
+              <input ref="sceneFileInput" type="file" accept="image/*" class="hidden"
+                     @change="(e) => uploadAndSetImage(e, 'scene')" />
+            </div>
           </a-form-item>
         </a-form>
       </div>
     </a-modal>
 
     <!-- ====== 分镜编辑弹窗 ====== -->
-    <a-modal
-      v-model:open="sbEditorOpen"
-      title="编辑分镜"
-      @ok="saveShot"
-      okText="保存"
-      cancelText="取消"
-      width="540px"
-      destroyOnClose
-    >
+    <a-modal v-model:open="sbEditorOpen" title="编辑分镜" @ok="saveShot" okText="保存" cancelText="取消" width="540px" destroyOnClose>
       <div class="space-y-4 pt-2">
         <a-form layout="vertical">
           <div class="grid grid-cols-2 gap-3">
@@ -611,58 +686,56 @@ const statusOptions = [
                 <a-select-option v-for="t in shotTypes" :key="t.value" :value="t.value">{{ t.label }}</a-select-option>
               </a-select>
             </a-form-item>
-            <a-form-item label="运镜方式">
-              <a-input v-model:value="sbForm.shotDirection" placeholder="如：推镜头/拉镜头/固定" />
-            </a-form-item>
+            <a-form-item label="运镜方式"><a-input v-model:value="sbForm.shotDirection" placeholder="如：推镜头/拉镜头/固定" /></a-form-item>
           </div>
-          <a-form-item label="动作描述">
-            <a-textarea v-model:value="sbForm.action" placeholder="描述这个镜头中的动作和画面..." :rows="3" />
-          </a-form-item>
-          <a-form-item label="台词">
-            <a-textarea v-model:value="sbForm.dialogue" placeholder="角色的台词内容..." :rows="2" />
-          </a-form-item>
+          <a-form-item label="动作描述"><a-textarea v-model:value="sbForm.action" placeholder="描述这个镜头中的动作和画面..." :rows="3" /></a-form-item>
+          <a-form-item label="台词"><a-textarea v-model:value="sbForm.dialogue" placeholder="角色的台词内容..." :rows="2" /></a-form-item>
         </a-form>
+      </div>
+    </a-modal>
+
+    <!-- ====== 从存储选择图片弹窗 ====== -->
+    <a-modal v-model:open="imagePickerOpen"
+      title="选择图片（素材库）" okText="" cancelText="关闭" width="600px" destroyOnClose
+      :body-style="{ maxHeight: '60vh', overflow: 'auto' }">
+      <div class="space-y-3">
+        <!-- Loading -->
+        <div v-if="loadingImages" class="flex justify-center py-8"><a-spin tip="加载中..." /></div>
+
+        <!-- Empty -->
+        <div v-else-if="imageAssets.length === 0" class="text-center py-8">
+          <p class="text-sm text-[#808080] mb-3">素材库暂无图片</p>
+          <a-button size="small" @click="imagePickerOpen = false; charFileInput?.click()">去上传</a-button>
+        </div>
+
+        <!-- 图片网格 -->
+        <div v-else class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          <div v-for="img in imageAssets" :key="img.id"
+            class="group aspect-square rounded-lg bg-[#242424] border border-[#333] overflow-hidden cursor-pointer hover:border-[#6366f1]/50 transition-all relative"
+            @click="selectImage(img)">
+            <img :src="img.fileUrl" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" loading="lazy" />
+            <!-- 选中指示器 -->
+            <div class="absolute inset-0 bg-[#6366f1]/0 group-hover:bg-[#6366f1]/10 transition-all flex items-end p-1.5">
+              <span class="text-[9px] text-white/70 truncate drop-shadow">{{ img.filename }}</span>
+            </div>
+            <!-- 已选中标记 -->
+            <div v-if="(imagePickerTarget==='char' && charForm.imageUrl===img.fileUrl) || (imagePickerTarget==='scene' && sceneForm.imageUrl===img.fileUrl)"
+              class="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#6366f1] flex items-center justify-center">
+              <span style="font-size: 11px;" class="text-white">✓</span>
+            </div>
+          </div>
+        </div>
       </div>
     </a-modal>
   </div>
 </template>
 
 <style scoped>
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.tab-btn {
-  padding: 8px 18px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s;
-  white-space: nowrap;
-  flex-shrink: 0;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: #a0a0a0;
-}
-.tab-btn:hover:not(.active) {
-  color: #f5f5f5;
-  background: #242424;
-}
-.tab-btn.active {
-  background: #6366f1;
-  color: #fff;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25);
-}
-
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* 暗色主题下覆盖 Ant Design 表单标签颜色 */
-:deep(.ant-form-item-label > label) {
-  color: #a0a0a0 !important;
-}
+::deep(.ant-form-item-label > label) { color: #a0a0a0 !important; }
 </style>

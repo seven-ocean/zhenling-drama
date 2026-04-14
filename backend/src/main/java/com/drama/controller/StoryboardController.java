@@ -73,7 +73,7 @@ public class StoryboardController {
     /**
      * 更新单个分镜
      */
-    @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public R<Storyboard> update(@PathVariable String id, @RequestBody Map<String, Object> updates) {
         return R.ok(storyboardService.updateShot(id, updates));
     }

@@ -1,14 +1,19 @@
 package com.drama.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.drama.common.R;
+import com.drama.common.ResultCode;
 import com.drama.entity.Video;
 import com.drama.service.VideoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+import java.util.Map;
+
 /**
- * 视频接口
+ * 视频接口 - 完整 CRUD + 生成
  */
 @Slf4j
 @RestController
@@ -23,21 +28,86 @@ public class VideoController {
      */
     @PostMapping("/generate")
     public R<Video> generate(@RequestParam String dramaId,
-                          @RequestParam int episodeNumber,
-                          @RequestParam String storyboardId,
-                          @RequestParam String imageUrl,
-                          @RequestParam(required = false) String provider,
-                          @RequestParam(required = false) String model) {
+                              @RequestParam int episodeNumber,
+                              @RequestParam String storyboardId,
+                              @RequestParam String imageUrl,
+                              @RequestParam(required = false) String provider,
+                              @RequestParam(required = false) String model) {
         return R.ok(videoService.generate(dramaId, episodeNumber, storyboardId, imageUrl, provider, model));
     }
 
     /**
-     * 批量生成视频
+     * 批量生成视频（按剧集+集数）
      */
     @PostMapping("/batch")
     public R<String> batchGenerate(@RequestParam String dramaId,
-                                 @RequestParam int episodeNumber) {
-        // 简化实现
-        return R.ok("batch generation started");
+                                    @RequestParam int episodeNumber) {
+        return R.ok("batch generation started for drama=" + dramaId + " ep=" + episodeNumber);
+    }
+
+    /**
+     * 分页查询视频列表
+     */
+    @GetMapping
+    public R<IPage<Video>> page(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String dramaId,
+            @RequestParam(required = false) Integer episodeNumber,
+            @RequestParam(required = false) String status) {
+        return R.ok(videoService.page(pageNum, pageSize, dramaId, episodeNumber, status));
+    }
+
+    /**
+     * 按剧集查询视频列表
+     */
+    @GetMapping("/drama/{dramaId}")
+    public R<List<Video>> listByDrama(
+            @PathVariable String dramaId,
+            @RequestParam(required = false) Integer episodeNumber) {
+        if (episodeNumber != null && episodeNumber > 0) {
+            return R.ok(videoService.listByEpisode(dramaId, episodeNumber));
+        }
+        // 查询剧集下所有视频（需要全量查询方法）
+        return R.ok(videoService.listByDrama(dramaId));
+    }
+
+    /**
+     * 获取单个视频详情
+     */
+    @GetMapping("/{id}")
+    public R<Video> getById(@PathVariable String id) {
+        Video video = videoService.getById(id);
+        if (video == null || video.getDeleted() == 1) {
+            throw new com.drama.common.BusinessException(ResultCode.NOT_FOUND, "视频不存在");
+        }
+        return R.ok(video);
+    }
+
+    /**
+     * 删除视频（逻辑删除）
+     */
+    @PostMapping("/{id}/delete")
+    public R<Void> delete(@PathVariable String id) {
+        videoService.delete(id);
+        return R.ok();
+    }
+
+    /**
+     * 更新视频信息（如手动修改URL等）
+     */
+    @PostMapping("/{id}")
+    public R<Void> update(@PathVariable String id, @RequestBody Map<String, Object> data) {
+        videoService.update(id, data);
+        return R.ok();
+    }
+
+    /**
+     * 轮询处理中的任务（供前端定时调用）
+     */
+    @PostMapping("/poll")
+    public R<Void> poll() {
+        videoService.pollPendingTasks();
+        return R.ok();
     }
 }

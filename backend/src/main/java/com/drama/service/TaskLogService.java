@@ -1,6 +1,8 @@
 package com.drama.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.drama.common.IdUtils;
 import com.drama.entity.TaskLog;
@@ -9,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -120,5 +123,27 @@ public class TaskLogService extends ServiceImpl<TaskLogMapper, TaskLog> {
                .eq(TaskLog::getDeleted, 0)
                .orderByAsc(TaskLog::getCreatedAt);
         return this.list(wrapper);
+    }
+
+    /**
+     * 分页查询任务日志
+     */
+    public IPage<TaskLog> page(int pageNum, int pageSize, String dramaId, String status, String taskType) {
+        Page<TaskLog> p = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<TaskLog> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TaskLog::getDeleted, 0)
+               .orderByDesc(TaskLog::getUpdatedAt);
+
+        if (StringUtils.hasText(dramaId)) {
+            wrapper.eq(TaskLog::getDramaId, dramaId);
+        }
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(TaskLog::getStatus, status);
+        }
+        if (StringUtils.hasText(taskType)) {
+            wrapper.eq(TaskLog::getTaskType, taskType);
+        }
+
+        return this.page(p, wrapper);
     }
 }

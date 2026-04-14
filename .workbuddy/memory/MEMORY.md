@@ -15,7 +15,7 @@
 - Git规范: feat/fix/docs/refactor 前缀
 - 核心铁律: 不反问、不质疑、不拖延、不废话；永远输出完整可运行代码
 
-## 项目状态 (2026-04-09)
+## 项目状态 (2026-04-14)
 - 7批移植完成，骨架代码全部完善
 - AI适配器: OpenAiAdapter(完整) / MiniMaxAdapter(完整含轮询)
 - TaskLog 实体+Mapper+Service 已创建
@@ -25,10 +25,29 @@
 - VideoComposeService getVideoInfo() ffprobe解析已完成
 - JWT 依赖已引入但未使用（无认证过滤器）
 - **前端UI框架**: 已切换到 **Ant Design Vue 4.x**（全局注册，暗色主题通过 ConfigProvider 配置）
-  - App.vue 使用 a-config-provider + a-app
+  - App.vue 使用 a-config-provider + a-app + 全局按钮icon对齐CSS
   - 所有页面组件已全面替换：a-input/a-modal/a-button/a-select/a-tag/a-popconfirm 等
   - 图标库: @ant-design/icons-vue（PlusOutlined/SaveOutlined/DeleteOutlined/EditOutlined 等）
   - 暗色主题 token: colorPrimary=#6366f1, colorBgContainer=#1a1a1a, colorBgLayout=#0f0f0f
   - 前端端口: 5173 / 后端端口: 8080
 - **环境要求**: JDK 17+（系统当前只有JDK8，需升级）
 - 前端响应式布局已完成，4个页面全面自适应
+
+## 已完成的 BUG 修复 (截至 2026-04-14, 共13个)
+| 编号 | 问题 | 状态 |
+|------|------|------|
+| BUG00001~08 | 基础功能(404/空页面/静默错误) | ✅ |
+| BUG00009 | /drama/new 路由复用空白 | ✅ watch(route.params.id) |
+| BUG00010 | 按钮icon+文字纵向对齐 | ✅ 全局 .ant-btn flex CSS |
+| **BUG00011** | OSS配置不持久化 + 无媒体预览 | ✅ OssConfigPersistence + 预览弹窗 |
+| **BUG00012** | 图片URL输入不友好 | ✅ 选择器弹窗 + 上传自动填入 |
+| **BUG00013** | AI配置缺Token单价字段 | ✅ DB DECIMAL(10,6) + BigDecimal |
+| **BUG00014** | AI配置列表只显示enabled记录 | ✅ 新增listAll() + 前端改单次请求 |
+| **BUG00011(2)** | storage.ts双重baseURL + 缺下载端点 | ✅ 移除冗余前缀 + AssetController新增download |
+| **BUG00011(3)** | OSS上传ACL私有+删除TODO | ✅ setObjectAcl(PublicRead) + client.deleteObject() |
+
+## 架构要点
+- **OSS持久化方案**: `OssConfigPersistence.java` → `./data/oss-config.json`，@PostConstruct 启动恢复
+- **图片选择器模式**: DramaDetail.vue 角色/场景共用 imagePicker（assetApi.page 加载素材库 + storageApi.upload 上传）
+- **SQL迁移文件**: migration-v2.sql (4张表) / migration-v3-token-price.sql (token_price字段) / migration-v4-minimax-configs.sql (MiniMax 4条配置)
+- **MiniMax API**: BaseURL=https://api.minimaxi.com/v1，文本OpenAI兼容/chat/completions，图片/image_generation，视频/video_generation+查询，TTS/t2a_v2

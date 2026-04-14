@@ -4,6 +4,8 @@ import DramaDetail from '@/views/DramaDetail.vue'
 import Workbench from '@/views/Workbench.vue'
 import MediaStudio from '@/views/MediaStudio.vue'
 import AiConfig from '@/views/AiConfig.vue'
+import StorageSettings from '@/views/StorageSettings.vue'
+import TaskTracker from '@/views/TaskTracker.vue'
 
 const routes = [
   { path: '/', name: 'home', redirect: '/dramas' },
@@ -12,6 +14,8 @@ const routes = [
   { path: '/workbench/:dramaId', name: 'workbench', component: Workbench },
   { path: '/media/:dramaId', name: 'media', component: MediaStudio },
   { path: '/settings/ai', name: 'ai-config', component: AiConfig },
+  { path: '/settings/storage', name: 'storage-settings', component: StorageSettings },
+  { path: '/settings/tasks', name: 'task-tracker', component: TaskTracker },
 ]
 
 export const router = createRouter({

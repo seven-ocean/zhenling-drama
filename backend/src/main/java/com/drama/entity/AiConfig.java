@@ -23,6 +23,7 @@ public class AiConfig {
     private Integer priority;
     private Boolean enabled;
     private String configJson;
+    private java.math.BigDecimal tokenPrice;
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

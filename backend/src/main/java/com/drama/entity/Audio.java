@@ -27,6 +27,7 @@ public class Audio {
     private String status;
     private String taskId;
     private String errorMessage;
+    private String extraData;
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

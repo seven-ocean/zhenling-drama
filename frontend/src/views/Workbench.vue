@@ -11,6 +11,8 @@ import {
   PictureOutlined,
   RobotOutlined,
   SendOutlined,
+  VideoCameraOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -177,18 +179,23 @@ onMounted(() => {
     <!-- Tab Bar -->
     <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
       <a-button
-        v-for="tab in ['storyboard', 'character', 'scene']"
-        :key="tab"
+        v-for="tab in [
+          { key: 'storyboard', label: '分镜编辑器', icon: VideoCameraOutlined },
+          { key: 'character', label: '角色图', icon: UserOutlined },
+          { key: 'scene', label: '场景图', icon: AppstoreOutlined }
+        ]"
+        :key="tab.key"
         :type="activeTab === tab ? 'primary' : 'default'"
         size="small"
-        @click="activeTab = tab"
+        @click="activeTab = tab.key"
         :class="[
           '!rounded-xl !font-medium whitespace-nowrap shrink-0',
           activeTab !== tab && '!bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0] hover:!text-[#f5f5f5] hover:!bg-[#242424]'
         ]"
       >
-        {{ tab === 'storyboard' ? '🎬 分镜编辑器' : tab === 'character' ? '👤 角色图' : '🏞️ 场景图' }}
-        <span v-if="tab === 'storyboard' && storyboards.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ storyboards.length }}</span>
+        <template #icon><component :is="tab.icon" /></template>
+        {{ tab.label }}
+        <span v-if="tab.key === 'storyboard' && storyboards.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ storyboards.length }}</span>
       </a-button>
     </div>
 

@@ -9,6 +9,7 @@ import com.drama.common.ResultCode;
 import com.drama.config.FileConfig;
 import com.drama.entity.Asset;
 import com.drama.mapper.AssetMapper;
+import com.drama.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ import java.util.UUID;
 public class AssetService extends ServiceImpl<AssetMapper, Asset> {
 
     private final FileConfig fileConfig;
+    private final FileStorageService fileStorageService;
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
@@ -151,22 +153,7 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
      */
     @Transactional
     public void delete(String id) {
-        Asset asset = this.getById(id);
-        if (asset == null || asset.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "素材不存在");
-        }
-        
-        // 删除物理文件
-        try {
-            Path fullPath = Paths.get(fileConfig.getPath(), asset.getFilePath());
-            Files.deleteIfExists(fullPath);
-        } catch (IOException e) {
-            log.warn("Delete file failed: {}", e.getMessage());
-        }
-        
-        asset.setDeleted(1);
-        this.updateById(asset);
-        log.info("Deleted asset: {}", id);
+        fileStorageService.deleteAsset(id);
     }
 
     private String getExtension(String filename) {

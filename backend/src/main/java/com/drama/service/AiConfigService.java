@@ -50,6 +50,16 @@ public class AiConfigService extends ServiceImpl<AiConfigMapper, AiConfig> {
         return this.list(wrapper);
     }
 
+    /**
+     * 查询所有未删除的配置（管理页面使用，包含禁用的）
+     */
+    public List<AiConfig> listAll() {
+        LambdaQueryWrapper<AiConfig> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AiConfig::getDeleted, 0);
+        wrapper.orderByAsc(AiConfig::getPriority);
+        return this.list(wrapper);
+    }
+
     public AiConfig getFirstAvailable(String apiType) {
         List<AiConfig> configs = this.listByType(apiType);
         if (configs.isEmpty()) {

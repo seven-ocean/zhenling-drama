@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { aiConfigApi } from '@/utils/aiConfig'
 import { message as AMessage, Modal as AModal } from 'ant-design-vue'
 import {
@@ -12,8 +12,12 @@ import {
 
 const configs = ref<any[]>([])
 const loading = ref(false)
+const errorMsg = ref('')
 const showModal = ref(false)
 const editing = ref<any>(null)
+
+// 当前筛选的类型（all 表示全部）
+const filterType = ref('all')
 
 const providers = [
   { value: 'openai', label: 'OpenAI' },
@@ -30,22 +34,33 @@ const apiTypes = [
   { value: 'tts', label: '语音合成' },
 ]
 
+const filteredConfigs = computed(() => {
+  if (filterType.value === 'all') return configs.value
+  return configs.value.filter((c: any) => c.apiType === filterType.value)
+})
+
 const loadConfigs = async () => {
   loading.value = true
+  errorMsg.value = ''
   try {
-    const res = await aiConfigApi.listByType('image')
-    if (res.code === 200) {
-      configs.value = res.data || []
+    // 单次请求加载所有配置（包含禁用的），不再分类型并行请求
+    const res = await aiConfigApi.list()
+    if (res.code === 200 && Array.isArray(res.data)) {
+      configs.value = res.data
+    } else {
+      throw new Error('返回数据格式异常')
     }
-  } catch (e) {
-    console.error(e)
+  } catch (e: any) {
+    errorMsg.value = e?.message || '加载AI配置失败，请检查后端服务是否启动'
+    console.error('加载AI配置失败:', e)
+    AMessage.error(errorMsg.value)
   } finally {
     loading.value = false
   }
 }
 
 const openModal = (item?: any) => {
-  editing.value = item ? { ...item } : { provider: 'openai', apiType: 'image', priority: 0, enabled: true }
+  editing.value = item ? { ...item } : { provider: 'openai', apiType: 'image', priority: 0, enabled: true, tokenPrice: 0.0002 }
   showModal.value = true
 }
 
@@ -102,11 +117,30 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex justify-between items-center">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
       <h3 class="text-lg font-medium text-[#f5f5f5]">AI 服务配置</h3>
       <a-button type="primary" @click="openModal()">
         <template #icon><PlusOutlined /></template>
         添加配置
+      </a-button>
+    </div>
+
+    <!-- 类型筛选 Tab -->
+    <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+      <a-button
+        v-for="t in [{ value: 'all', label: '全部' }, ...apiTypes]"
+        :key="t.value"
+        @click="filterType = t.value"
+        :type="filterType === t.value ? 'primary' : 'default'"
+        size="small"
+        :class="[
+          '!rounded-xl !font-medium whitespace-nowrap shrink-0',
+          filterType !== t && '!bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0] hover:!text-[#f5f5f5] hover:!bg-[#242424]'
+        ]"
+      >
+        {{ t.label }}
+        <span v-if="t.value !== 'all'" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ configs.filter((c: any) => c.apiType === t.value).length }}</span>
+        <span v-else class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ configs.length }}</span>
       </a-button>
     </div>
 
@@ -115,8 +149,17 @@ onMounted(() => {
       <a-spin tip="加载中..." />
     </div>
 
+    <!-- Error -->
+    <div v-else-if="errorMsg" class="flex items-center justify-center py-12">
+      <a-result status="warning" :title="errorMsg" class="!text-[#808080]">
+        <template #extra>
+          <a-button type="primary" @click="loadConfigs">重试</a-button>
+        </template>
+      </a-result>
+    </div>
+
     <!-- Empty -->
-    <div v-else-if="configs.length === 0" class="text-center py-12 text-[#606060]">
+    <div v-else-if="filteredConfigs.length === 0 && configs.length === 0" class="text-center py-12">
       <a-empty description="暂无 AI 配置，点击上方添加">
         <template #extra>
           <a-button type="primary" @click="openModal()">
@@ -127,9 +170,14 @@ onMounted(() => {
       </a-empty>
     </div>
 
+    <!-- 筛选后为空 -->
+    <div v-else-if="filteredConfigs.length === 0" class="text-center py-12">
+      <a-empty description="该类型暂无配置" />
+    </div>
+
     <!-- Config List -->
     <div v-else class="space-y-3">
-      <div v-for="item in configs" :key="item.id"
+      <div v-for="item in filteredConfigs" :key="item.id"
         class="flex items-center justify-between p-4 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] hover:border-[#444] transition-colors">
         <div class="flex items-center gap-4 flex-1 min-w-0">
           <a-tag :color="item.enabled ? '#16a34a15' : '#52525b'" class="!font-medium shrink-0">
@@ -198,9 +246,16 @@ onMounted(() => {
           <a-form-item label="模型名称">
             <a-input v-model:value="editing.model" placeholder="gpt-4o" />
           </a-form-item>
-          <a-form-item label="优先级">
-            <a-input-number v-model:value="editing.priority" :min="0" class="w-full" />
-          </a-form-item>
+          <div class="grid grid-cols-2 gap-3">
+            <a-form-item label="优先级">
+              <a-input-number v-model:value="editing.priority" :min="0" class="w-full" />
+            </a-form-item>
+            <a-form-item label="Token单价（元/Token）">
+              <a-input-number v-model:value="editing.tokenPrice" :min="0" :step="0.0001" class="w-full"
+                :precision="6" placeholder="0.0002" />
+              <p class="text-[10px] text-[#505050] mt-1">用于计算任务 Token 消耗费用</p>
+            </a-form-item>
+          </div>
         </a-form>
       </div>
     </a-modal>
@@ -208,6 +263,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
 /* 暗色主题下覆盖 Ant Design 表单标签颜色 */
 :deep(.ant-form-item-label > label) {
   color: #a0a0a0 !important;

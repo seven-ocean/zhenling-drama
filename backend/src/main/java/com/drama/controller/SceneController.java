@@ -47,7 +47,7 @@ public class SceneController {
     /**
      * 更新场景
      */
-    @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public R<Scene> update(@PathVariable String id, @RequestBody Scene scene) {
         scene.setId(id);
         return R.ok(sceneService.update(scene));

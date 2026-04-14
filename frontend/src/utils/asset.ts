@@ -17,5 +17,5 @@ export const assetApi = {
   list: (dramaId: string, type?: string) => ofetch(`/assets/drama/${dramaId}`, { params: { type }, baseURL }),
   page: (params: any) => ofetch('/assets', { params, baseURL }),
   get: (id: string) => ofetch(`/assets/${id}`, { baseURL }),
-  delete: (id: string) => ofetch(`/assets/${id}`, { method: 'DELETE', baseURL }),
+  delete: (id: string) => ofetch(`/assets/${id}`, { method: 'POST', baseURL }),
 }

@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
 import { theme } from 'ant-design-vue'
+import {
+  VideoCameraOutlined,
+  SettingOutlined,
+  CloudUploadOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 
 const navItems = [
-  { path: '/dramas', label: '剧集', icon: '🎬' },
-  { path: '/settings/ai', label: 'AI配置', icon: '⚡' },
+  { path: '/dramas', label: '剧集', icon: VideoCameraOutlined },
+  { path: '/settings/ai', label: 'AI配置', icon: SettingOutlined },
+  { path: '/settings/storage', label: '存储', icon: CloudUploadOutlined },
+  { path: '/settings/tasks', label: '任务追踪', icon: ClockCircleOutlined },
 ]
 
 const isActive = (path: string) => route.path.startsWith(path)
@@ -35,7 +43,7 @@ const isActive = (path: string) => route.path.startsWith(path)
         <div class="header-inner">
           <div class="header-left">
             <h1 class="logo" @click="router.push('/')">
-              <span class="logo-icon">🔥</span>
+              <img class="logo-icon" src="/logo.png" alt="臻灵短剧" />
               <span class="logo-text hidden sm:inline">臻灵短剧</span>
             </h1>
             <nav class="nav-list">
@@ -45,7 +53,8 @@ const isActive = (path: string) => route.path.startsWith(path)
                 @click="router.push(item.path)"
                 :class="['nav-item', { active: isActive(item.path) }]"
               >
-                {{ item.icon }} {{ item.label }}
+                <component :is="item.icon" class="nav-icon" />
+                {{ item.label }}
               </button>
             </nav>
           </div>
@@ -106,7 +115,7 @@ const isActive = (path: string) => route.path.startsWith(path)
 }
 .logo:hover { color: #fff; }
 
-.logo-icon { font-size: 20px; }
+.logo-icon { width: 24px; height: 24px; object-fit: contain; }
 .logo-text { font-size: 17px; }
 
 .nav-list {
@@ -131,7 +140,11 @@ const isActive = (path: string) => route.path.startsWith(path)
   border: none;
   background: transparent;
   color: #808080;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
+.nav-icon { font-size: 15px; }
 .nav-item:hover {
   color: #d0d0d0;
   background: #242424;
@@ -153,5 +166,22 @@ const isActive = (path: string) => route.path.startsWith(path)
   padding: 0 16px;
   margin: 0 auto;
   max-width: 1440px;
+}
+</style>
+
+<!-- 全局样式：确保所有 Ant Design 按钮内 icon 与文字垂直居中对齐 -->
+<style>
+/* 强制所有 a-button 内部使用 inline-flex 纵向居中 */
+.ant-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+}
+/* 确保图标组件本身也是 flex 居中的 */
+.ant-btn .anticon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 </style>

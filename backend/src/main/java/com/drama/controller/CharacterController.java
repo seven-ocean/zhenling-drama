@@ -35,7 +35,7 @@ public class CharacterController {
         return R.ok(characterService.getById(id));
     }
 
-    @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public R<Character> update(@PathVariable String id, @RequestBody Character character) {
         character.setId(id);
         return R.ok(characterService.update(character));

@@ -1,6 +1,7 @@
 package com.drama.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.drama.common.BusinessException;
 import com.drama.common.IdUtils;
@@ -13,9 +14,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 视频生成服务 - 支持异步任务轮询
@@ -192,5 +195,58 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
         }
         existing.setDeleted(1);
         this.updateById(existing);
+    }
+
+    /**
+     * 分页查询
+     */
+    public Page<Video> page(int pageNum, int pageSize, String dramaId, Integer episodeNumber, String status) {
+        Page<Video> page = new Page<>(pageNum, pageSize);
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Video::getDeleted, 0);
+
+        if (StringUtils.hasText(dramaId)) {
+            wrapper.eq(Video::getDramaId, dramaId);
+        }
+        if (episodeNumber != null && episodeNumber > 0) {
+            wrapper.eq(Video::getEpisodeNumber, episodeNumber);
+        }
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(Video::getStatus, status);
+        }
+        wrapper.orderByDesc(Video::getCreatedAt);
+
+        return this.page(page, wrapper);
+    }
+
+    /**
+     * 查询剧集下的所有视频
+     */
+    public List<Video> listByDrama(String dramaId) {
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Video::getDramaId, dramaId)
+               .eq(Video::getDeleted, 0)
+               .orderByDesc(Video::getCreatedAt);
+        return this.list(wrapper);
+    }
+
+    /**
+     * 更新视频信息（支持 Map 灵活更新）
+     */
+    @Transactional
+    public void update(String id, Map<String, Object> data) {
+        Video video = super.getById(id);
+        if (video == null || video.getDeleted() == 1) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "视频不存在");
+        }
+        // 只允许更新特定字段
+        if (data.containsKey("videoUrl")) video.setVideoUrl((String) data.get("videoUrl"));
+        if (data.containsKey("status")) video.setStatus((String) data.get("status"));
+        if (data.containsKey("errorMessage")) video.setErrorMessage((String) data.get("errorMessage"));
+        if (data.containsKey("duration")) video.setDuration(((Number) data.get("duration")).floatValue());
+        if (data.containsKey("extraData")) video.setExtraData(data.get("extraData") != null ? data.get("extraData").toString() : null);
+
+        video.setUpdatedAt(LocalDateTime.now());
+        this.updateById(video);
     }
 }
