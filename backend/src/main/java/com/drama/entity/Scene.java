@@ -23,6 +23,8 @@ public class Scene {
     private String timeOfDay;
     private String prompt;
     private String extraData;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

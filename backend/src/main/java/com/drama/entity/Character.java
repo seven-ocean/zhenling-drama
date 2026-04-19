@@ -25,6 +25,8 @@ public class Character {
     private String dialogueStyle;
     private Integer sortOrder;
     private String extraData;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

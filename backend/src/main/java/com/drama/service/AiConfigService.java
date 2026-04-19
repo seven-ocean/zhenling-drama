@@ -81,13 +81,16 @@ public class AiConfigService extends ServiceImpl<AiConfigMapper, AiConfig> {
 
     @Transactional
     public void delete(String id) {
+        // 先检查记录是否存在（由于@TableLogic，getById会自动过滤已删除记录）
         AiConfig config = this.getById(id);
-        if (config == null || config.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "配置不存在");
+        if (config == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "配置不存在或已被删除");
         }
-        config.setDeleted(1);
-        config.setUpdatedAt(LocalDateTime.now());
-        this.updateById(config);
+        // 使用MyBatis-Plus的removeById进行逻辑删除
+        boolean success = this.removeById(id);
+        if (!success) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败");
+        }
         log.info("Deleted AI config: {}", id);
     }
 

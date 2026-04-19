@@ -31,6 +31,8 @@ public class Storyboard {
     private String gridPrompt;
     private String status;
     private String extraData;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

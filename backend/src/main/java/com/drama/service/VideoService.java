@@ -189,21 +189,25 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
      */
     @Transactional
     public void delete(String id) {
+        // 先检查记录是否存在（由于@TableLogic，getById会自动过滤已删除记录）
         Video existing = super.getById(id);
-        if (existing == null || existing.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "视频不存在");
+        if (existing == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "视频不存在或已被删除");
         }
-        existing.setDeleted(1);
-        this.updateById(existing);
+        // 使用MyBatis-Plus的removeById进行逻辑删除
+        boolean success = this.removeById(id);
+        if (!success) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败");
+        }
     }
 
     /**
      * 分页查询
+     * 注意：MyBatis-Plus已配置全局逻辑删除，会自动添加 deleted = 0 条件
      */
     public Page<Video> page(int pageNum, int pageSize, String dramaId, Integer episodeNumber, String status) {
         Page<Video> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Video::getDeleted, 0);
 
         if (StringUtils.hasText(dramaId)) {
             wrapper.eq(Video::getDramaId, dramaId);

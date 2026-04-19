@@ -18,6 +18,11 @@ const filterStatus = ref('all')
 const autoRefresh = ref(false)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
+// 分页
+const pageNum = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
 const statusOptions = [
   { value: 'all', label: '全部', color: '#808080', icon: ClockCircleOutlined },
   { value: 'pending', label: '等待中', color: '#f59e0b', icon: ClockCircleOutlined },
@@ -31,7 +36,7 @@ const filteredTasks = ref<any[]>([])
 const loadTasks = async () => {
   loading.value = true
   try {
-    const res = await taskApi.list({ pageSize: 50 })
+    const res = await taskApi.list({ pageSize: pageSize.value, pageNum: pageNum.value })
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
       // 按状态排序：pending/running 在前
@@ -40,6 +45,7 @@ const loadTasks = async () => {
         if (b.status === 'pending' || b.status === 'running' && a.status !== 'pending' && a.status !== 'running') return 1
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       })
+      total.value = res.data?.total || tasks.value.length
       applyFilter()
     }
   } catch (e) {
@@ -47,6 +53,12 @@ const loadTasks = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const onPageChange = (page: number, size: number) => {
+  pageNum.value = page
+  pageSize.value = size
+  loadTasks()
 }
 
 const applyFilter = () => {
@@ -110,11 +122,13 @@ const taskTypeMap: Record<string, string> = {
         任务进度追踪
       </h2>
       <div class="flex items-center gap-2">
-        <a-button :type="autoRefresh ? 'primary' : 'default'" size="small" @click="toggleAutoRefresh" :class="!rounded-xl">
+        <a-button :type="autoRefresh ? 'primary' : 'default'" size="small" @click="toggleAutoRefresh" class="!rounded-xl">
           <template #icon><SyncOutlined :class="{ 'animate-spin': autoRefresh }" /></template>
           {{ autoRefresh ? '自动刷新中' : '自动刷新' }}
         </a-button>
-        <a-button size="small" @click="loadTasks" :loading="loading" class="!rounded-xl"><ReloadOutlined /> 刷新</a-button>
+        <a-button size="small" @click="loadTasks" :loading="loading" class="!rounded-xl">
+          <template #icon><ReloadOutlined /></template> 刷新
+        </a-button>
       </div>
     </div>
 
@@ -208,6 +222,20 @@ const taskTypeMap: Record<string, string> = {
         </div>
       </div>
     </div>
+
+    <!-- Pagination -->
+    <div v-if="total > pageSize" class="flex justify-center pt-4 pb-8">
+      <a-pagination
+        :current="pageNum"
+        :pageSize="pageSize"
+        :total="total"
+        :showSizeChanger="true"
+        size="small"
+        @change="onPageChange"
+        :page-size-options="['20', '30', '50']"
+        class="!text-[#a0a0a0]"
+      />
+    </div>
   </div>
 </template>
 
@@ -261,4 +289,26 @@ function formatTime(time?: string | null): string {
   50% { opacity: 0.7; }
 }
 .animate-pulse-slow { animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+/* 分页组件暗色适配 */
+:deep(.ant-pagination) { gap: 4px; }
+:deep(.ant-pagination-item) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  border-radius: 8px !important;
+}
+:deep(.ant-pagination-item a) { color: #a0a0a0 !important; }
+:deep(.ant-pagination-item-active),
+:deep(.ant-pagination-item-active a) {
+  background: #6366f1 !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
+}
+:deep(.ant-pagination-prev .ant-pagination-item-link),
+:deep(.ant-pagination-next .ant-pagination-item-link) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  color: #a0a0a0 !important;
+  border-radius: 8px !important;
+}
 </style>

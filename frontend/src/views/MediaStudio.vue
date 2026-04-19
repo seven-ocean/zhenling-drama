@@ -58,7 +58,11 @@ const generateTTS = async () => {
     if (res.code === 200 && res.data) {
       audios.value.unshift(res.data)
       if (res.data.audioUrl) {
-        new Audio(res.data.audioUrl).play().catch(() => {})
+        const audio = new Audio(res.data.audioUrl)
+        audio.play().catch((err) => {
+          console.error('Audio play failed:', err)
+          AMessage.warning('音频播放失败，可能是文件访问权限问题')
+        })
       }
       AMessage.success('配音生成成功')
       ttsText.value = ''
@@ -116,6 +120,15 @@ const pollVideos = () => {
       loadVideos()
     }).catch(() => {})
   }
+}
+
+// 播放音频（带错误处理）
+const playAudio = (url: string) => {
+  const audio = new Audio(url)
+  audio.play().catch((err) => {
+    console.error('Audio play failed:', err)
+    AMessage.warning('音频播放失败，可能是文件访问权限问题')
+  })
 }
 
 // ====== 合成 ======
@@ -316,7 +329,7 @@ const statusLabelMap: Record<string, string> = {
             <div v-for="audio in audios.slice(0, 20)" :key="audio.id"
               class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] group">
               <div class="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg bg-purple-500/10 shrink-0 cursor-pointer"
-                @click="audio.audioUrl ? new Audio(audio.audioUrl).play() : null">
+                @click="audio.audioUrl ? playAudio(audio.audioUrl) : null">
                 <PlayCircleOutlined style="color: #a78bfa; font-size: 16px;" />
               </div>
               <div class="flex-1 min-w-0">

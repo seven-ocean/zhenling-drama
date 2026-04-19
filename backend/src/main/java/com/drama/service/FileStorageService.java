@@ -96,7 +96,10 @@ public class FileStorageService {
         Asset asset = new Asset();
         asset.setId(IdUtils.randomId());
         asset.setDramaId(dramaId);
-        asset.setType(type != null ? type : guessType(mimeType));
+        // 优先根据 MIME 类型判断文件类型，确保类型正确
+        String detectedType = guessType(mimeType);
+        // 如果前端传递的类型与检测的类型不一致，以检测的为准（防止前端传错）
+        asset.setType(detectedType != null ? detectedType : (type != null ? type : "file"));
         asset.setFilename(filename);
         asset.setFilePath(relativePath);
         asset.setFileUrl(finalUrl);
@@ -127,10 +130,18 @@ public class FileStorageService {
      */
     @Transactional
     public void deleteAsset(String id) {
+        log.info("[DeleteAsset] Starting delete for id: {}", id);
+        
+        // 由于@TableLogic，selectById会自动过滤已删除的记录
+        // 如果需要查询包括已删除的记录，需要使用selectById(id, false)
         Asset asset = assetMapper.selectById(id);
-        if (asset == null || asset.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "素材不存在");
+        if (asset == null) {
+            log.warn("[DeleteAsset] Asset not found or already deleted: {}", id);
+            throw new BusinessException(ResultCode.NOT_FOUND, "素材不存在或已被删除");
         }
+        
+        log.info("[DeleteAsset] Found asset: {}, type: {}, source: {}", 
+                 asset.getFilename(), asset.getType(), asset.getSourceType());
 
         if ("oss".equals(asset.getSourceType())) {
             // 从 OSS Bucket 真正删除对象
@@ -154,9 +165,16 @@ public class FileStorageService {
             }
         }
 
-        asset.setDeleted(1);
-        assetMapper.updateById(asset);
-        log.info("Deleted asset: {}", id);
+        // 使用MyBatis-Plus的逻辑删除（会自动设置deleted=1）
+        int result = assetMapper.deleteById(id);
+        log.info("[DeleteAsset] Database delete result: {}, asset id: {}", result, id);
+        
+        if (result > 0) {
+            log.info("[DeleteAsset] Successfully deleted asset: {}", id);
+        } else {
+            log.error("[DeleteAsset] Failed to delete asset from database: {}", id);
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败，数据库更新失败");
+        }
     }
 
     /**
@@ -248,6 +266,23 @@ public class FileStorageService {
         if (mimeType.startsWith("video/")) return "video";
         if (mimeType.startsWith("audio/")) return "audio";
         return "file";
+    }
+
+    /**
+     * 获取文件的可访问URL
+     * - 本地文件：返回相对路径
+     * - OSS文件：如果配置了自定义域名返回自定义URL，否则返回标准OSS URL
+     * 注意：OSS文件需要确保Bucket ACL为公共读或文件已设置PublicRead权限
+     */
+    public String getAccessibleUrl(Asset asset) {
+        if (asset == null) return null;
+        
+        if ("local".equals(asset.getSourceType())) {
+            return "/api/v1/assets/download/" + asset.getFilePath();
+        }
+        
+        // OSS文件直接返回存储的URL
+        return asset.getFileUrl();
     }
 
     /**

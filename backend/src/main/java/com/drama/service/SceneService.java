@@ -71,13 +71,16 @@ public class SceneService extends ServiceImpl<SceneMapper, Scene> {
 
     @Transactional
     public void delete(String id) {
+        // 先检查记录是否存在（由于@TableLogic，getById会自动过滤已删除记录）
         Scene scene = this.getById(id);
-        if (scene == null || scene.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "场景不存在");
+        if (scene == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "场景不存在或已被删除");
         }
-        scene.setDeleted(1);
-        scene.setUpdatedAt(LocalDateTime.now());
-        this.updateById(scene);
+        // 使用MyBatis-Plus的removeById进行逻辑删除
+        boolean success = this.removeById(id);
+        if (!success) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败");
+        }
         log.info("Deleted scene: {}", id);
     }
 }

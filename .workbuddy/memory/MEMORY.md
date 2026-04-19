@@ -15,7 +15,7 @@
 - Git规范: feat/fix/docs/refactor 前缀
 - 核心铁律: 不反问、不质疑、不拖延、不废话；永远输出完整可运行代码
 
-## 项目状态 (2026-04-14)
+## 项目状态 (2026-04-16)
 - 7批移植完成，骨架代码全部完善
 - AI适配器: OpenAiAdapter(完整) / MiniMaxAdapter(完整含轮询)
 - TaskLog 实体+Mapper+Service 已创建
@@ -45,9 +45,13 @@
 | **BUG00014** | AI配置列表只显示enabled记录 | ✅ 新增listAll() + 前端改单次请求 |
 | **BUG00011(2)** | storage.ts双重baseURL + 缺下载端点 | ✅ 移除冗余前缀 + AssetController新增download |
 | **BUG00011(3)** | OSS上传ACL私有+删除TODO | ✅ setObjectAcl(PublicRead) + client.deleteObject() |
+| **BUG00015** | ai.ts/media.ts 中 ofetch is not defined | ✅ 改用 import api from './request' |
+| **BUG00016** | RestTemplate 不走系统代理 → UnknownHostException | ✅ 新增 RestTemplateConfig + application-dev.yml 代理配置(127.0.0.1:8888) + Adapter 注入 Bean |
 
 ## 架构要点
 - **OSS持久化方案**: `OssConfigPersistence.java` → `./data/oss-config.json`，@PostConstruct 启动恢复
 - **图片选择器模式**: DramaDetail.vue 角色/场景共用 imagePicker（assetApi.page 加载素材库 + storageApi.upload 上传）
 - **SQL迁移文件**: migration-v2.sql (4张表) / migration-v3-token-price.sql (token_price字段) / migration-v4-minimax-configs.sql (MiniMax 4条配置)
 - **MiniMax API**: BaseURL=https://api.minimaxi.com/v1，文本OpenAI兼容/chat/completions，图片/image_generation，视频/video_generation+查询，TTS/t2a_v2
+- **RestTemplate 代理配置**: `RestTemplateConfig.java` → `OkHttp3ClientHttpRequestFactory` + 自定义 Dns（Google 8.8.8.8）；dev 环境 `http.proxy.enabled=false / dns.enabled=true`
+- **MiniMax 模型名铁律**: 只支持 `MiniMax-M2.5`（文本）/ `image-01`（图片）/ `MiniMax-Hailuo-2.3`（视频）/ `speech-02-hd`（TTS），**禁止传 OpenAI 模型名**（gpt-4o/dall-e-3）—— `StoryboardService` 和 `ImageGenerationService` 均已改为传 `null` 让适配器用 DB 配置

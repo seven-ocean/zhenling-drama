@@ -3,6 +3,7 @@ package com.drama.service.adapter;
 import com.drama.entity.AiConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,7 @@ import org.springframework.web.client.RestTemplate;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class MiniMaxAdapter implements AiAdapter {
 
     private static final String PROVIDER = "minimax";
@@ -38,7 +40,9 @@ public class MiniMaxAdapter implements AiAdapter {
     private static final String DEFAULT_TTS_MODEL = "speech-02-hd";
 
     private AiConfig config;
-    private final RestTemplate restTemplate = new RestTemplate();
+
+    /** 注入由 RestTemplateConfig 创建的 Bean（支持代理） */
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override

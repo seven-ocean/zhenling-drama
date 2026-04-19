@@ -6,7 +6,6 @@ import { message as AMessage } from 'ant-design-vue'
 import {
   PlusOutlined,
   VideoCameraOutlined,
-  FileImageOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -15,7 +14,8 @@ const dramas = ref<any[]>([])
 const loading = ref(false)
 const errorMsg = ref('')
 const pageNum = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(12)
+const total = ref(0)
 
 const loadDramas = async () => {
   loading.value = true
@@ -26,6 +26,7 @@ const loadDramas = async () => {
       const pageData = res.data
       // 兼容后端返回 IPage（records 字段）或数组
       dramas.value = pageData?.records || (Array.isArray(pageData) ? pageData : [])
+      total.value = pageData?.total || dramas.value.length
     } else {
       errorMsg.value = res.message || '加载剧集失败'
       AMessage.error(errorMsg.value)
@@ -37,6 +38,12 @@ const loadDramas = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const onPageChange = (page: number, size: number) => {
+  pageNum.value = page
+  pageSize.value = size
+  loadDramas()
 }
 
 const goToDetail = (id: string) => {
@@ -86,38 +93,55 @@ onMounted(() => {
     </div>
 
     <!-- List -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div
-        v-for="drama in dramas"
-        :key="drama.id"
-        @click="goToDetail(drama.id)"
-        class="group bg-[#1a1a1a] rounded-2xl overflow-hidden border border-[#2a2a2a] hover:border-[#6366f1]/50 hover:shadow-card transition-all duration-300 cursor-pointer"
-      >
-        <!-- Cover -->
-        <div class="aspect-video bg-[#242424] relative overflow-hidden">
-          <img
-            v-if="drama.coverImage"
-            :src="drama.coverImage"
-            class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
-          <div v-else class="w-full h-full flex items-center justify-center">
-            <VideoCameraOutlined style="font-size: 48px; color: #404040;" />
+    <div v-if="!loading && !errorMsg && dramas.length > 0" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div
+          v-for="drama in dramas"
+          :key="drama.id"
+          @click="goToDetail(drama.id)"
+          class="group bg-[#1a1a1a] rounded-2xl overflow-hidden border border-[#2a2a2a] hover:border-[#6366f1]/50 hover:shadow-card transition-all duration-300 cursor-pointer"
+        >
+          <!-- Cover -->
+          <div class="aspect-video bg-[#242424] relative overflow-hidden">
+            <img
+              v-if="drama.coverImage"
+              :src="drama.coverImage"
+              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center">
+              <VideoCameraOutlined style="font-size: 48px; color: #404040;" />
+            </div>
+            <!-- Status Badge -->
+            <div class="absolute top-3 right-3 px-3 py-1 bg-[#0f0f0f]/80 rounded-full text-xs text-[#a0a0a0]">
+              {{ drama.status === 'draft' ? '草稿' : drama.status }}
+            </div>
           </div>
-          <!-- Status Badge -->
-          <div class="absolute top-3 right-3 px-3 py-1 bg-[#0f0f0f]/80 rounded-full text-xs text-[#a0a0a0]">
-            {{ drama.status === 'draft' ? '草稿' : drama.status }}
-          </div>
-        </div>
 
-        <!-- Info -->
-        <div class="p-5">
-          <h3 class="text-lg font-medium text-[#f5f5f5] mb-2 line-clamp-1">{{ drama.title }}</h3>
-          <p class="text-sm text-[#808080] line-clamp-2 mb-4">{{ drama.description || '暂无描述' }}</p>
-          <div class="flex items-center justify-between text-sm text-[#606060]">
-            <span>{{ drama.totalEpisodes || 0 }}集</span>
-            <span>{{ drama.createdEpisodes || 0 }}已生成</span>
+          <!-- Info -->
+          <div class="p-5">
+            <h3 class="text-lg font-medium text-[#f5f5f5] mb-2 line-clamp-1">{{ drama.title }}</h3>
+            <p class="text-sm text-[#808080] line-clamp-2 mb-4">{{ drama.description || '暂无描述' }}</p>
+            <div class="flex items-center justify-between text-sm text-[#606060]">
+              <span>{{ drama.totalEpisodes || 0 }}集</span>
+              <span>{{ drama.createdEpisodes || 0 }}已生成</span>
+            </div>
           </div>
         </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="flex justify-center pt-4 pb-8" v-if="total > pageSize">
+        <a-pagination
+          :current="pageNum"
+          :pageSize="pageSize"
+          :total="total"
+          :showSizeChanger="true"
+          :showQuickJumper="true"
+          size="small"
+          @change="onPageChange"
+          :page-size-options="['9', '12', '18', '24']"
+          class="!text-[#a0a0a0]"
+        />
       </div>
     </div>
   </div>
@@ -128,5 +152,32 @@ onMounted(() => {
 .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .hover\:shadow-card:hover {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(99, 102, 241, 0.08);
+}
+/* 分页组件暗色适配 */
+:deep(.ant-pagination) { gap: 4px; }
+:deep(.ant-pagination-item) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  border-radius: 8px !important;
+}
+:deep(.ant-pagination-item a) { color: #a0a0a0 !important; }
+:deep(.ant-pagination-item-active),
+:deep(.ant-pagination-item-active a) {
+  background: #6366f1 !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
+}
+:deep(.ant-pagination-prev .ant-pagination-item-link),
+:deep(.ant-pagination-next .ant-pagination-item-link) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  color: #a0a0a0 !important;
+  border-radius: 8px !important;
+}
+:deep(.ant-pagination-options-quick-jumper input) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  color: #e0e0e0 !important;
+  border-radius: 8px !important;
 }
 </style>

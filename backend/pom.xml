@@ -115,6 +115,13 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- OkHttp（支持自定义 DNS / 代理，比 RestTemplate 更灵活） -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.12.0</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -123,6 +130,13 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <!-- JVM 网络参数：优先 IPv4 + 自定义 DNS（解决部分网络环境域名解析失败问题） -->
+                    <jvmArguments>
+                        -Djava.net.preferIPv4Stack=false
+                        -Dsun.net.inetaddr.ttl=-1
+                        -Dnetworkaddress.cache.ttl=-1
+                        -Dnetworkaddress.cache.negative.ttl=0
+                    </jvmArguments>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

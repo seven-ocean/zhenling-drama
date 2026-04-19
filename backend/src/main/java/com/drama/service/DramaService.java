@@ -98,13 +98,16 @@ public class DramaService extends ServiceImpl<DramaMapper, Drama> {
      */
     @Transactional
     public void delete(String id) {
+        // 先检查记录是否存在（由于@TableLogic，getById会自动过滤已删除记录）
         Drama drama = this.getById(id);
-        if (drama == null || drama.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "剧集不存在");
+        if (drama == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "剧集不存在或已被删除");
         }
-        drama.setDeleted(1);
-        drama.setUpdatedAt(LocalDateTime.now());
-        this.updateById(drama);
+        // 使用MyBatis-Plus的removeById进行逻辑删除
+        boolean success = this.removeById(id);
+        if (!success) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败");
+        }
         log.info("Deleted drama: {}", id);
     }
 

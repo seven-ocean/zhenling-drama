@@ -27,6 +27,8 @@ public class Asset {
     private Float duration;
     private String sourceType;
     private String extraData;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

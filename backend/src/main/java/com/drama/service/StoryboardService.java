@@ -47,7 +47,7 @@ public class StoryboardService extends ServiceImpl<StoryboardMapper, Storyboard>
 
         // 调用AI拆分剧本
         String prompt = buildSplitPrompt(script, episodeNumber);
-        String aiResult = aiServiceFactory.generateText(null, prompt, "gpt-4o");
+        String aiResult = aiServiceFactory.generateText(null, prompt, null);
         
         if (!StringUtils.hasText(aiResult) || aiResult.length() < 10) {
             throw new BusinessException(ResultCode.SERVER_ERROR,
@@ -154,13 +154,16 @@ public class StoryboardService extends ServiceImpl<StoryboardMapper, Storyboard>
      */
     @Transactional
     public void deleteShot(String id) {
+        // 先检查记录是否存在（由于@TableLogic，getById会自动过滤已删除记录）
         Storyboard existing = this.getById(id);
-        if (existing == null || existing.getDeleted() == 1) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "分镜不存在");
+        if (existing == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "分镜不存在或已被删除");
         }
-        existing.setDeleted(1);
-        existing.setUpdatedAt(LocalDateTime.now());
-        this.updateById(existing);
+        // 使用MyBatis-Plus的removeById进行逻辑删除
+        boolean success = this.removeById(id);
+        if (!success) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "删除失败");
+        }
     }
 
     /**

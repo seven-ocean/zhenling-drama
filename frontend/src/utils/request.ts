@@ -38,7 +38,7 @@ export const characterApi = {
   create: (data: any) => api('/characters', { method: 'POST', body: data }),
   get: (id: string) => api(`/characters/${id}`),
   update: (id: string, data: any) => api(`/characters/${id}`, { method: 'POST', body: data }),
-  delete: (id: string) => api(`/characters/${id}`, { method: 'POST' }),
+  delete: (id: string) => api(`/characters/${id}`, { method: 'DELETE' }),
 }
 
 // ====== 场景 API ======
@@ -47,7 +47,7 @@ export const sceneApi = {
   create: (data: any) => api('/scenes', { method: 'POST', body: data }),
   get: (id: string) => api(`/scenes/${id}`),
   update: (id: string, data: any) => api(`/scenes/${id}`, { method: 'POST', body: data }),
-  delete: (id: string) => api(`/scenes/${id}`, { method: 'POST' }),
+  delete: (id: string) => api(`/scenes/${id}`, { method: 'DELETE' }),
 }
 
 // ====== 分镜 API ======

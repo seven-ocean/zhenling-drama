@@ -24,6 +24,8 @@ public class AiConfig {
     private Boolean enabled;
     private String configJson;
     private java.math.BigDecimal tokenPrice;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

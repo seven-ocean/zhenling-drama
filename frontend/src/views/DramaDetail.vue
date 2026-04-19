@@ -48,10 +48,11 @@ const loadData = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const [dramaRes, charRes, sceneRes] = await Promise.all([
+    const [dramaRes, charRes, sceneRes, sbRes] = await Promise.all([
       dramaApi.get(route.params.id as string),
       characterApi.list(route.params.id as string),
       sceneApi.list(route.params.id as string),
+      storyboardApi.list(route.params.id as string, 1), // 默认加载第1集的分镜
     ])
     if (dramaRes.code === 200) {
       store.setDrama(dramaRes.data)
@@ -60,6 +61,7 @@ const loadData = async () => {
     }
     if (charRes.code === 200) store.setCharacters(charRes.data || [])
     if (sceneRes.code === 200) store.setScenes(sceneRes.data || [])
+    if (sbRes.code === 200) sbList.value = sbRes.data || []
   } catch (e: any) {
     const msg = e?.message || '加载数据失败，请检查后端服务是否启动（端口8080）'
     loadError.value = msg
@@ -271,9 +273,13 @@ const statusOptions = [
 
 // ====== 图片选择器（角色/场景弹窗共用）======
 const imagePickerOpen = ref(false)
-const imagePickerTarget = ref<'char' | 'scene'>('char')
+const imagePickerTarget = ref<'char' | 'scene' | 'cover'>('char')
 const imageAssets = ref<any[]>([])
 const loadingImages = ref(false)
+
+// AI 生成状态
+const generatingCharImg = ref<string | null>(null)
+const generatingSceneImg = ref<string | null>(null)
 
 const openImagePicker = (target: 'char' | 'scene') => {
   imagePickerTarget.value = target
@@ -296,15 +302,17 @@ const loadImageAssets = async () => {
 // 从存储中选择图片
 const selectImage = (asset: any) => {
   if (imagePickerTarget.value === 'char') charForm.value.imageUrl = asset.fileUrl
-  else sceneForm.value.imageUrl = asset.fileUrl
+  else if (imagePickerTarget.value === 'scene') sceneForm.value.imageUrl = asset.fileUrl
+  else store.currentDrama.coverImage = asset.fileUrl
   imagePickerOpen.value = false
 }
 
 // 上传图片并自动填入 URL
 const charFileInput = ref<HTMLInputElement | null>(null)
 const sceneFileInput = ref<HTMLInputElement | null>(null)
+const coverFileInput = ref<HTMLInputElement | null>(null)
 
-const uploadAndSetImage = async (event: Event, target: 'char' | 'scene') => {
+const uploadAndSetImage = async (event: Event, target: 'char' | 'scene' | 'cover') => {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
@@ -313,7 +321,8 @@ const uploadAndSetImage = async (event: Event, target: 'char' | 'scene') => {
     const res = await storageApi.upload(file, undefined, 'image')
     if (res.code === 200 && res.data?.fileUrl) {
       if (target === 'char') charForm.value.imageUrl = res.data.fileUrl
-      else sceneForm.value.imageUrl = res.data.fileUrl
+      else if (target === 'scene') sceneForm.value.imageUrl = res.data.fileUrl
+      else store.currentDrama.coverImage = res.data.fileUrl
       AMessage.success('图片已上传')
     } else {
       throw new Error('上传返回异常')
@@ -322,6 +331,56 @@ const uploadAndSetImage = async (event: Event, target: 'char' | 'scene') => {
     AMessage.error(e?.message || '上传失败')
   } finally {
     input.value = ''
+  }
+}
+
+// AI 生成角色形象图
+const aiGenerateCharImage = async () => {
+  if (!charForm.value.name.trim()) { AMessage.warning('请先填写角色名称'); return }
+  const prompt = charForm.value.appearancePrompt || `${charForm.value.name}, anime style character portrait, detailed`
+  generatingCharImg.value = 'modal'
+  try {
+    const dramaId = route.params.id as string
+    const res = await aiApi.generateCharacterImage({
+      dramaId,
+      characterId: editingChar.value?.id || '',
+      prompt,
+    })
+    if (res.code === 200 && res.data) {
+      charForm.value.imageUrl = res.data.fileUrl || res.data.url || res.data
+      AMessage.success('AI 角色图生成成功')
+    } else {
+      AMessage.error(res.message || 'AI 生成失败，请检查 AI 配置')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || 'AI 生成失败')
+  } finally {
+    generatingCharImg.value = null
+  }
+}
+
+// AI 生成场景图
+const aiGenerateSceneImage = async () => {
+  if (!sceneForm.value.name.trim()) { AMessage.warning('请先填写场景名称'); return }
+  const prompt = sceneForm.value.prompt || `${sceneForm.value.name}, anime style background scene, detailed cinematic`
+  generatingSceneImg.value = 'modal'
+  try {
+    const dramaId = route.params.id as string
+    const res = await aiApi.generateSceneImage({
+      dramaId,
+      sceneId: editingScene.value?.id || '',
+      prompt,
+    })
+    if (res.code === 200 && res.data) {
+      sceneForm.value.imageUrl = res.data.fileUrl || res.data.url || res.data
+      AMessage.success('AI 场景图生成成功')
+    } else {
+      AMessage.error(res.message || 'AI 生成失败，请检查 AI 配置')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || 'AI 生成失败')
+  } finally {
+    generatingSceneImg.value = null
   }
 }
 
@@ -380,6 +439,22 @@ const clearImageUrl = (target: 'char' | 'scene') => {
     <!-- ========== 新建剧集表单 ========== -->
     <div v-if="isNew && store.currentDrama" class="max-w-xl mx-auto">
       <div class="bg-[#1a1a1a] rounded-2xl border border-[#2a2a2a] p-6 sm:p-8 space-y-6">
+        <!-- 封面上传（新建时可选） -->
+        <div class="relative w-full aspect-video rounded-xl bg-[#242424] border border-dashed border-[#333] overflow-hidden cursor-pointer hover:border-[#6366f1]/40 transition-colors"
+             @click="coverFileInput?.click()">
+          <img
+            v-if="store.currentDrama.coverImage"
+            :src="store.currentDrama.coverImage"
+            class="w-full h-full object-cover"
+          />
+          <div v-else class="w-full h-full flex flex-col items-center justify-center text-[#404040]">
+            <UploadOutlined style="font-size: 28px;" class="mb-2" />
+            <span class="text-xs">点击上传封面图（可选）</span>
+          </div>
+          <!-- <input ref="coverFileInput" type="file" accept="image/*" class="hidden"
+                 @change="(e) => uploadAndSetImage(e, 'cover')" /> -->
+        </div>
+
         <div>
           <label class="block text-sm text-[#a0a0a0] mb-2">剧集标题 <span class="text-red-400">*</span></label>
           <a-input v-model:value="store.currentDrama.title" placeholder="输入剧集标题" size="large" />
@@ -440,7 +515,7 @@ const clearImageUrl = (target: 'char' | 'scene') => {
           <div v-for="char in store.characters" :key="char.id"
             class="group bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-3 sm:p-4 hover:border-[#6366f1]/50 transition-all cursor-pointer relative">
             <a-popconfirm title="确定删除该角色？" ok-text="确定" cancel-text="取消" @confirm="deleteChar(char.id)">
-              <button class="absolute top-1.5 right-1.5 p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 transition-all z-10">
+              <button @click.stop class="absolute top-1.5 right-1.5 p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 transition-all z-10">
                 <DeleteOutlined style="font-size: 12px;" />
               </button>
             </a-popconfirm>
@@ -479,7 +554,7 @@ const clearImageUrl = (target: 'char' | 'scene') => {
                 <PictureOutlined style="font-size: 32px;" />
               </div>
               <a-popconfirm title="确定删除该场景？" ok-text="确定" cancel-text="取消" @confirm="deleteScene(scene.id)">
-                <button class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all">
+                <button @click.stop class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all">
                   <DeleteOutlined style="font-size: 14px;" />
                 </button>
               </a-popconfirm>
@@ -559,6 +634,38 @@ const clearImageUrl = (target: 'char' | 'scene') => {
         <div class="bg-[#1a1a1a] rounded-2xl border border-[#2a2a2a] p-5 sm:p-6 space-y-5">
           <h3 class="text-base sm:text-lg font-medium text-[#f5f5f5]">基本信息</h3>
 
+          <!-- 封面图上传 -->
+          <div>
+            <label class="block text-sm text-[#a0a0a0] mb-2">剧集封面</label>
+            <div class="relative w-full aspect-video max-w-sm rounded-xl bg-[#242424] border border-[#2a2a2a] overflow-hidden group">
+              <img
+                v-if="store.currentDrama?.coverImage"
+                :src="store.currentDrama.coverImage"
+                class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+              />
+              <div v-else class="w-full h-full flex flex-col items-center justify-center text-[#404040] cursor-pointer hover:bg-[#2a2a2a] transition-colors"
+                   @click="coverFileInput?.click()">
+                <PictureOutlined style="font-size: 32px;" class="mb-2" />
+                <span class="text-xs">点击上传封面图</span>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-2">
+              <a-button size="small" @click="openImagePicker('cover')" class="!flex-1">
+                <template #icon><FolderOpenOutlined /></template>从存储选择
+              </a-button>
+              <a-button size="small" @click="coverFileInput?.click()" class="!flex-1">
+                <template #icon><UploadOutlined /></template>{{ store.currentDrama?.coverImage ? '更换' : '上传图片' }}
+              </a-button>
+              <a-popconfirm title="确定移除封面？" ok-text="确定" cancel-text="取消"
+                            @confirm="store.currentDrama.coverImage = ''"
+                            v-if="store.currentDrama?.coverImage">
+                <a-button size="small" danger class="!px-3">移除</a-button>
+              </a-popconfirm>
+              <!-- <input ref="coverFileInput" type="file" accept="image/*" class="hidden"
+                     @change="(e) => uploadAndSetImage(e, 'cover')" /> -->
+            </div>
+          </div>
+
           <div>
             <label class="block text-sm text-[#a0a0a0] mb-2">剧集标题</label>
             <a-input v-model:value="store.currentDrama.title" size="large" />
@@ -592,7 +699,7 @@ const clearImageUrl = (target: 'char' | 'scene') => {
 
     <!-- ====== 角色弹窗 ====== -->
     <a-modal v-model:open="charModalOpen" :title="editingChar ? '编辑角色' : '添加角色'"
-      @ok="saveChar" :okButtonProps="{ disabled: !charForm.name?.trim() }" okText="创建" :cancelText="'取消'" width="500px" destroyOnClose>
+      @ok="saveChar" :okButtonProps="{ disabled: !charForm.name?.trim() }" okText="创建" cancelText="取消" width="500px" destroyOnClose>
       <div class="space-y-4 pt-2">
         <a-form layout="vertical">
           <a-form-item label="名称" required><a-input v-model:value="charForm.name" placeholder="角色名称" /></a-form-item>
@@ -620,8 +727,12 @@ const clearImageUrl = (target: 'char' | 'scene') => {
               <a-button size="small" @click="charFileInput?.click()" class="!flex-1">
                 <template #icon><UploadOutlined /></template>上传图片
               </a-button>
-              <input ref="charFileInput" type="file" accept="image/*" class="hidden"
-                     @change="(e) => uploadAndSetImage(e, 'char')" />
+              <a-button size="small" :loading="generatingCharImg === 'modal'" @click="aiGenerateCharImage"
+                        class="!flex-1 !border-[#6366f1]/40 !text-[#a78bfa] hover:!bg-[#6366f1]/10">
+                <template #icon><RobotOutlined /></template>{{ generatingCharImg === 'modal' ? '生成中...' : 'AI生成' }}
+              </a-button>
+              <!-- <input ref="charFileInput" type="file" accept="image/*" class="hidden"
+                     @change="(e) => uploadAndSetImage(e, 'char')" /> -->
             </div>
           </a-form-item>
         </a-form>
@@ -668,8 +779,12 @@ const clearImageUrl = (target: 'char' | 'scene') => {
               <a-button size="small" @click="sceneFileInput?.click()" class="!flex-1">
                 <template #icon><UploadOutlined /></template>上传图片
               </a-button>
-              <input ref="sceneFileInput" type="file" accept="image/*" class="hidden"
-                     @change="(e) => uploadAndSetImage(e, 'scene')" />
+              <a-button size="small" :loading="generatingSceneImg === 'modal'" @click="aiGenerateSceneImage"
+                        class="!flex-1 !border-[#6366f1]/40 !text-[#a78bfa] hover:!bg-[#6366f1]/10">
+                <template #icon><RobotOutlined /></template>{{ generatingSceneImg === 'modal' ? '生成中...' : 'AI生成' }}
+              </a-button>
+              <!-- <input ref="sceneFileInput" type="file" accept="image/*" class="hidden"
+                     @change="(e) => uploadAndSetImage(e, 'scene')" /> -->
             </div>
           </a-form-item>
         </a-form>

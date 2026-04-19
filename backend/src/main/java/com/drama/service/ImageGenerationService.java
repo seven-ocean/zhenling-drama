@@ -33,7 +33,8 @@ public class ImageGenerationService {
         }
 
         String actualProvider = provider != null ? provider : null;  // null = auto-select
-        String actualModel = model != null ? model : "dall-e-3";
+        // 传 null 让适配器使用 DB 中配置的模型（如 MiniMax image-01），避免硬编码不支持的模型名
+        String actualModel = model;
 
         log.info("Generating character image: provider={}, model={}", actualProvider, actualModel);
 
@@ -85,7 +86,7 @@ public class ImageGenerationService {
         }
 
         String actualProvider = provider != null ? provider : null;
-        String actualModel = model != null ? model : "dall-e-3";
+        String actualModel = model;
 
         log.info("Generating scene image: provider={}, model={}", actualProvider, actualModel);
 
@@ -132,7 +133,7 @@ public class ImageGenerationService {
         }
 
         String actualProvider = provider != null ? provider : null;
-        String actualModel = model != null ? model : "dall-e-3";
+        String actualModel = model;
 
         log.info("Generating grid image: provider={}, model={}", actualProvider, actualModel);
 

@@ -22,6 +22,8 @@ public class Drama {
     private Integer totalEpisodes;
     private Integer createdEpisodes;
     private String settings;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

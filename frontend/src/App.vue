@@ -169,19 +169,123 @@ const isActive = (path: string) => route.path.startsWith(path)
 }
 </style>
 
-<!-- 全局样式：确保所有 Ant Design 按钮内 icon 与文字垂直居中对齐 -->
+<!-- 全局样式：Ant Design Vue 暗色主题精细化优化 -->
 <style>
-/* 强制所有 a-button 内部使用 inline-flex 纵向居中 */
+/* ====== 1. 按钮系统（核心：icon 与文字垂直居中对齐）====== */
 .ant-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 6px !important;
+  line-height: 1.5 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
-/* 确保图标组件本身也是 flex 居中的 */
 .ant-btn .anticon {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+}
+/* link 类型按钮保持左对齐 */
+.ant-btn-type-link,
+a-button[type="link"] .ant-btn {
+  justify-content: flex-start !important;
+}
+
+/* ====== 2. Tag 标签优化 ====== */
+.ant-tag {
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  padding: 2px 8px !important;
+  transition: all 0.2s !important;
+}
+
+/* ====== 3. Select 下拉框暗色适配 ====== */
+.ant-select-dropdown {
+  background: #1e1e1e !important;
+  border: 1px solid #333 !important;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.45) !important;
+}
+.ant-select-item {
+  color: #d0d0d0 !important;
+}
+.ant-select-item-option-active {
+  background: #6366f115 !important;
+}
+.ant-select-item-option-selected {
+  background: #6366f120 !important;
+  color: #a78bfa !important;
+}
+
+/* ====== 4. Modal 弹窗暗色增强 ====== */
+.ant-modal-header {
+  background: transparent !important;
+  border-bottom-color: #2a2a2a !important;
+}
+.ant-modal-close {
+  color: #808080 !important;
+}
+.ant-modal-close:hover {
+  color: #f5f5f5 !important;
+}
+
+/* ====== 5. Form 表单暗色微调 ====== */
+.ant-input,
+.ant-input-password .ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker {
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affixwrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15) !important;
+}
+
+/* ====== 6. Tooltip 暗色背景 ====== */
+.ant-tooltip-inner {
+  background: #2a2a2a !important;
+  color: #e0e0e0 !important;
+  font-size: 12px !important;
+}
+.ant-tooltip-arrow::before {
+  background: #2a2a2a !important;
+}
+
+/* ====== 7. Popconfirm 暗色适配 ====== */
+.ant-popconfirm .ant-popover-inner {
+  background: #242424 !important;
+  border: 1px solid #333 !important;
+}
+.ant-popconfirm .ant-popover-message-title {
+  color: #e0e0e0 !important;
+}
+
+/* ====== 8. Empty 空状态文字颜色 ====== */
+.ant-empty-description {
+  color: #606060 !important;
+}
+
+/* ====== 9. Spin 加载指示器颜色 ====== */
+.ant-spin-dot-item {
+  background: #6366f1 !important;
+}
+.ant-spin-text {
+  color: #a0a0a0 !important;
+}
+
+/* ====== 10. Scrollbar 细腻滚动条 ====== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ====== 11. Alert 组件暗色适配 ====== */
+.ant-alert-info {
+  background: #1a2340 !important;
+  border-color: #2a3560 !important;
 }
 </style>

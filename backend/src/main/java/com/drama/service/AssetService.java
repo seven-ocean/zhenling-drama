@@ -115,11 +115,11 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
 
     /**
      * 按剧集查询素材
+     * 注意：MyBatis-Plus已配置全局逻辑删除，会自动添加 deleted = 0 条件
      */
     public List<Asset> listByDramaId(String dramaId, String type) {
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Asset::getDramaId, dramaId)
-               .eq(Asset::getDeleted, 0);
+        wrapper.eq(Asset::getDramaId, dramaId);
         
         if (StringUtils.hasText(type)) {
             wrapper.eq(Asset::getType, type);
@@ -131,11 +131,11 @@ public class AssetService extends ServiceImpl<AssetMapper, Asset> {
 
     /**
      * 分页查询
+     * 注意：MyBatis-Plus已配置全局逻辑删除，会自动添加 deleted = 0 条件
      */
     public Page<Asset> page(int pageNum, int pageSize, String dramaId, String type) {
         Page<Asset> page = new Page<>(pageNum, pageSize);
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Asset::getDeleted, 0);
         
         if (StringUtils.hasText(dramaId)) {
             wrapper.eq(Asset::getDramaId, dramaId);

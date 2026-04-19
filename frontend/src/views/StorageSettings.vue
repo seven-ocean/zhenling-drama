@@ -45,6 +45,9 @@ const files = ref<any[]>([])
 const loadingFiles = ref(false)
 const uploading = ref(false)
 const selectedType = ref('all')
+const pageNum = ref(1)
+const pageSize = ref(24)
+const fileTotal = ref(0)
 
 const fileTypes = [
   { value: 'all', label: '全部' },
@@ -63,11 +66,16 @@ const filteredFiles = computed(() => {
 const previewVisible = ref(false)
 const previewItem = ref<any>(null)
 const previewType = ref<'image' | 'video' | 'audio'>('image')
+const previewLoading = ref(false)
+const previewError = ref('')
 
 // 打开图片预览（Ant Design a-image 内置）
 // 打开视频/音频预览弹窗
 const openPreview = (item: any) => {
   previewItem.value = item
+  previewLoading.value = true
+  previewError.value = ''
+  
   if (item.type === 'video') {
     previewType.value = 'video'
     previewVisible.value = true
@@ -84,7 +92,23 @@ const openPreview = (item: any) => {
 const closePreview = () => {
   previewVisible.value = false
   // 稍微延迟清空，避免动画闪烁
-  setTimeout(() => { previewItem.value = null }, 300)
+  setTimeout(() => { 
+    previewItem.value = null
+    previewLoading.value = false
+    previewError.value = ''
+  }, 300)
+}
+
+// 处理媒体加载错误
+const handleMediaError = (e: Event) => {
+  previewLoading.value = false
+  previewError.value = '媒体加载失败，可能是文件访问权限问题或文件不存在'
+  console.error('Media load error:', e)
+}
+
+// 处理媒体加载成功
+const handleMediaLoaded = () => {
+  previewLoading.value = false
 }
 
 // 加载存储状态
@@ -104,16 +128,48 @@ const loadStatus = async () => {
 const loadFiles = async () => {
   loadingFiles.value = true
   try {
-    const res = await assetApi.page({ pageNum: 1, pageSize: 100 })
+    console.log('Loading files...')
+    // 添加时间戳避免缓存
+    const res = await assetApi.page({ 
+      pageNum: pageNum.value, 
+      pageSize: pageSize.value,
+      _t: Date.now() 
+    })
+    console.log('Load files response:', res)
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
+      console.log('Files loaded:', list.length, 'items')
       files.value = list
+      fileTotal.value = res.data?.total || list.length
     }
   } catch (e) {
     console.error('Load files failed:', e)
   } finally {
     loadingFiles.value = false
   }
+}
+
+const onFilePageChange = (page: number, size: number) => {
+  pageNum.value = page
+  pageSize.value = size
+  loadFiles()
+}
+
+// 根据文件类型判断素材类型
+const getFileType = (file: File): string => {
+  const mimeType = file.type
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('video/')) return 'video'
+  if (mimeType.startsWith('audio/')) return 'audio'
+  // 根据扩展名判断
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm']
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma']
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']
+  if (videoExts.includes(ext)) return 'video'
+  if (audioExts.includes(ext)) return 'audio'
+  if (imageExts.includes(ext)) return 'image'
+  return 'file'
 }
 
 // 上传文件
@@ -124,7 +180,8 @@ const uploadFiles = async (event: Event) => {
   uploading.value = true
   try {
     for (const file of Array.from(input.files)) {
-      await storageApi.upload(file, undefined, 'image')
+      const fileType = getFileType(file)
+      await storageApi.upload(file, undefined, fileType)
     }
     AMessage.success(`成功上传 ${input.files.length} 个文件`)
     input.value = ''
@@ -140,10 +197,25 @@ const uploadFiles = async (event: Event) => {
 // 删除文件
 const deleteFile = async (id: string) => {
   try {
-    await storageApi.delete(id)
+    console.log('Deleting file:', id)
+    const res = await storageApi.delete(id)
+    console.log('Delete response:', res)
+    
+    // 立即从本地列表中移除该项（乐观更新）
+    const index = files.value.findIndex((f: any) => f.id === id)
+    if (index > -1) {
+      files.value.splice(index, 1)
+      fileTotal.value = Math.max(0, fileTotal.value - 1)
+      console.log('Removed file from local list:', id)
+    }
+    
     AMessage.success('已删除')
-    await loadFiles()
+    // 延迟一下再刷新列表，确保数据库事务已提交
+    setTimeout(async () => {
+      await loadFiles()
+    }, 500)
   } catch (e: any) {
+    console.error('Delete failed:', e)
     AMessage.error(e?.message || '删除失败')
   }
 }
@@ -342,7 +414,7 @@ onMounted(() => {
           </div>
 
           <!-- ====== 音频：图标 + 点击播放 ====== -->
-          <div v-else-if="item.type === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer"
+          <div v-else-if="item.type === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer relative"
                @click="openPreview(item)">
             <SoundOutlined class="text-[#6366f1] group-hover:scale-110 transition-transform" style="font-size: 48px;" />
             <div v-if="item.duration" class="absolute bottom-2 right-2 text-[10px] text-[#888]">
@@ -371,27 +443,65 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
+      <!-- File Pagination -->
+      <div v-if="fileTotal > pageSize" class="flex justify-center pt-4 pb-4">
+        <a-pagination
+          :current="pageNum"
+          :pageSize="pageSize"
+          :total="fileTotal"
+          :showSizeChanger="true"
+          size="small"
+          @change="onFilePageChange"
+          :page-size-options="['12', '24', '48', '96']"
+          class="!text-[#a0a0a0]"
+        />
+      </div>
     </div>
 
     <!-- ====== 媒体预览弹窗 ====== -->
     <a-modal v-model:open="previewVisible" :footer="null" width="720px"
              :body-style="{ padding: 0, background: '#000' }" destroyOnClose @cancel="closePreview">
 
+      <!-- 错误提示 -->
+      <div v-if="previewError" class="flex flex-col items-center justify-center py-16 px-8 text-center">
+        <CloseCircleOutlined style="font-size: 48px; color: #ff4d4f;" class="mb-4" />
+        <p class="text-[#e0e0e0] mb-2">{{ previewError }}</p>
+        <p class="text-xs text-[#808080] mb-4">如果是OSS文件，请检查Bucket权限设置</p>
+        <a-button type="primary" @click="closePreview">关闭</a-button>
+      </div>
+
       <!-- 图片预览 -->
-      <img v-if="previewType === 'image' && previewItem" :src="previewItem.fileUrl"
-           class="max-w-full max-h-[70vh] mx-auto object-contain" />
+      <div v-else-if="previewType === 'image' && previewItem" class="relative">
+        <!-- 加载状态遮罩 -->
+        <div v-if="previewLoading" class="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+          <a-spin size="large" tip="加载中..." />
+        </div>
+        <img :src="previewItem.fileUrl" class="max-w-full max-h-[70vh] mx-auto object-contain"
+             @load="handleMediaLoaded" @error="handleMediaError" />
+      </div>
 
       <!-- 视频预览 -->
-      <div v-else-if="previewType === 'video' && previewItem" class="flex flex-col items-center">
-        <video :src="previewItem.fileUrl" controls autoplay class="w-full max-w-full" style="max-height: 65vh;" />
+      <div v-else-if="previewType === 'video' && previewItem" class="flex flex-col items-center relative">
+        <!-- 加载状态遮罩 -->
+        <div v-if="previewLoading" class="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+          <a-spin size="large" tip="加载中..." />
+        </div>
+        <video :src="previewItem.fileUrl" controls autoplay class="w-full max-w-full" style="max-height: 65vh;"
+               @loadeddata="handleMediaLoaded" @error="handleMediaError" />
         <p v-if="previewItem.filename" class="mt-3 text-sm text-[#a0a0a0]">{{ previewItem.filename }}</p>
       </div>
 
       <!-- 音频预览 -->
-      <div v-else-if="previewType === 'audio' && previewItem" class="flex flex-col items-center justify-center py-8 px-8 space-y-4">
+      <div v-else-if="previewType === 'audio' && previewItem" class="flex flex-col items-center justify-center py-8 px-8 space-y-4 relative">
+        <!-- 加载状态遮罩 -->
+        <div v-if="previewLoading" class="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+          <a-spin size="large" tip="加载中..." />
+        </div>
         <SoundOutlined style="font-size: 64px; color: #6366f1;" />
         <p v-if="previewItem.filename" class="text-sm text-[#f5f5f5]">{{ previewItem.filename }}</p>
-        <audio :src="previewItem.fileUrl" controls autoplay class="w-full" />
+        <audio :src="previewItem.fileUrl" controls autoplay class="w-full"
+               @loadeddata="handleMediaLoaded" @error="handleMediaError" />
       </div>
     </a-modal>
 
@@ -464,5 +574,27 @@ function formatSize(bytes?: number | null): string {
 
 ::deep(.ant-form-item-label > label) {
   color: #a0a0a0 !important;
+}
+
+/* 分页组件暗色适配 */
+:deep(.ant-pagination) { gap: 4px; }
+:deep(.ant-pagination-item) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  border-radius: 8px !important;
+}
+:deep(.ant-pagination-item a) { color: #a0a0a0 !important; }
+:deep(.ant-pagination-item-active),
+:deep(.ant-pagination-item-active a) {
+  background: #6366f1 !important;
+  border-color: #6366f1 !important;
+  color: #fff !important;
+}
+:deep(.ant-pagination-prev .ant-pagination-item-link),
+:deep(.ant-pagination-next .ant-pagination-item-link) {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+  color: #a0a0a0 !important;
+  border-radius: 8px !important;
 }
 </style>

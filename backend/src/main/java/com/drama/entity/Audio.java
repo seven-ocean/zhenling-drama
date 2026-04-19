@@ -28,6 +28,8 @@ public class Audio {
     private String taskId;
     private String errorMessage;
     private String extraData;
+    
+    @TableLogic
     private Integer deleted;
 
     @TableField(fill = FieldFill.INSERT)

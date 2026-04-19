@@ -32,3 +32,19 @@ logging:
   level:
     root: INFO
     com.drama: DEBUG
+
+# ====== HTTP 代理配置（开发环境）======
+# 两种模式二选一：
+# 1. 直连 + 自定义 DNS（推荐，无需代理软件）
+# 2. HTTP 代理（如果直连失败，配置 proxy 走代理软件）
+http:
+  proxy:
+    enabled: false      # 直连模式；如需代理改为 true
+    host: 127.0.0.1
+    port: 8888
+  timeout:
+    connect: 15000      # 连接超时 15s
+    read: 60000         # 读取超时 60s（图片/视频生成耗时较长）
+  dns:
+    enabled: true      # 开启自定义 DNS 解析
+    servers: 8.8.8.8,8.8.4.4  # Google Public DNS
