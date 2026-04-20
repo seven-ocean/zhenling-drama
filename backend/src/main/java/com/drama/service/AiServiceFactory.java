@@ -72,12 +72,22 @@ public class AiServiceFactory {
             for (AiConfig config : configs) {
                 AiAdapter adapter = adapters.get(config.getProvider().toLowerCase());
                 if (adapter != null && adapter.isConfigured()) {
+                    log.info("Using configured adapter: provider={}, type={}", config.getProvider(), apiType);
                     return adapter;
                 }
             }
-            // 如果都没配置，返回第一个的适配器（会提示错误）
+            // 如果都没配置，尝试用第一个配置初始化适配器
             AiConfig first = configs.get(0);
-            return adapters.get(first.getProvider().toLowerCase());
+            AiAdapter adapter = adapters.get(first.getProvider().toLowerCase());
+            if (adapter != null) {
+                log.info("Initializing adapter with config: provider={}, type={}", first.getProvider(), apiType);
+                adapter.initConfig(first);
+                if (adapter.isConfigured()) {
+                    return adapter;
+                }
+            }
+            throw new BusinessException(ResultCode.SERVER_ERROR,
+                    "AI适配器未正确配置 (type=" + apiType + ", provider=" + first.getProvider() + ")");
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {

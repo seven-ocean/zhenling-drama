@@ -3,6 +3,15 @@
   "sessions": {
     "beffb873b4084ad7bfc719e69ffd388c": [
       {
+        "expertId": "SeniorDeveloper",
+        "name": "Will",
+        "profession": "高级开发工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/SeniorDeveloper/SeniorDeveloper.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
+        "usedAt": 1776601014325,
+        "industryId": "all"
+      },
+      {
         "expertId": "NarrativeDesigner",
         "name": "剧本本",
         "profession": "叙事设计师",
@@ -10,17 +19,8 @@
         "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/12-GameDevelopment/NarrativeDesigner/NarrativeDesigner_zh.md",
         "usedAt": 1776346757395,
         "industryId": "04-PaidMedia"
-      },
-      {
-        "expertId": "SeniorDeveloper",
-        "name": "Will",
-        "profession": "高级开发工程师",
-        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/SeniorDeveloper/SeniorDeveloper.png",
-        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
-        "usedAt": 1776345419637,
-        "industryId": "all"
       }
     ]
   },
-  "lastUpdated": 1776350858123
+  "lastUpdated": 1776601124189
 }

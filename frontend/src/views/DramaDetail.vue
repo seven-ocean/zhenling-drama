@@ -451,8 +451,8 @@ const clearImageUrl = (target: 'char' | 'scene') => {
             <UploadOutlined style="font-size: 28px;" class="mb-2" />
             <span class="text-xs">点击上传封面图（可选）</span>
           </div>
-          <!-- <input ref="coverFileInput" type="file" accept="image/*" class="hidden"
-                 @change="(e) => uploadAndSetImage(e, 'cover')" /> -->
+          <input ref="coverFileInput" type="file" accept="image/*" class="hidden" hidden
+                 @change="(e) => uploadAndSetImage(e, 'cover')" />
         </div>
 
         <div>
@@ -548,16 +548,21 @@ const clearImageUrl = (target: 'char' | 'scene') => {
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           <div v-for="scene in store.scenes" :key="scene.id"
             class="group bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/50 transition-all cursor-pointer">
+            <!-- 场景图片区域（点击打开编辑弹窗） -->
             <div class="relative aspect-video bg-[#242424]" @click="openSceneModal(scene)">
               <img v-if="scene.imageUrl" :src="scene.imageUrl" class="w-full h-full object-cover" />
               <div v-else class="w-full h-full flex items-center justify-center text-[#404040]">
                 <PictureOutlined style="font-size: 32px;" />
               </div>
-              <a-popconfirm title="确定删除该场景？" ok-text="确定" cancel-text="取消" @confirm="deleteScene(scene.id)">
-                <button @click.stop class="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all">
-                  <DeleteOutlined style="font-size: 14px;" />
-                </button>
-              </a-popconfirm>
+              <!-- 删除按钮：独立区域，阻止事件冒泡到 openSceneModal -->
+              <div class="absolute top-2 right-2 z-10">
+                <a-popconfirm title="确定删除该场景？" ok-text="确定" cancel-text="取消"
+                             @confirm="deleteScene(scene.id)">
+                  <button @click.stop class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 bg-black/30 backdrop-blur-sm transition-all">
+                    <DeleteOutlined style="font-size: 14px;" />
+                  </button>
+                </a-popconfirm>
+              </div>
             </div>
             <div class="p-2.5 sm:p-3" @click="openSceneModal(scene)">
               <p class="text-xs sm:text-sm font-medium text-[#f5f5f5] truncate">{{ scene.name }}</p>
@@ -661,8 +666,8 @@ const clearImageUrl = (target: 'char' | 'scene') => {
                             v-if="store.currentDrama?.coverImage">
                 <a-button size="small" danger class="!px-3">移除</a-button>
               </a-popconfirm>
-              <!-- <input ref="coverFileInput" type="file" accept="image/*" class="hidden"
-                     @change="(e) => uploadAndSetImage(e, 'cover')" /> -->
+              <input ref="coverFileInput" type="file" accept="image/*" class="hidden" hidden
+                     @change="(e) => uploadAndSetImage(e, 'cover')" />
             </div>
           </div>
 
@@ -731,8 +736,8 @@ const clearImageUrl = (target: 'char' | 'scene') => {
                         class="!flex-1 !border-[#6366f1]/40 !text-[#a78bfa] hover:!bg-[#6366f1]/10">
                 <template #icon><RobotOutlined /></template>{{ generatingCharImg === 'modal' ? '生成中...' : 'AI生成' }}
               </a-button>
-              <!-- <input ref="charFileInput" type="file" accept="image/*" class="hidden"
-                     @change="(e) => uploadAndSetImage(e, 'char')" /> -->
+              <input ref="charFileInput" type="file" accept="image/*" class="hidden" hidden
+                     @change="(e) => uploadAndSetImage(e, 'char')" />
             </div>
           </a-form-item>
         </a-form>
@@ -783,8 +788,8 @@ const clearImageUrl = (target: 'char' | 'scene') => {
                         class="!flex-1 !border-[#6366f1]/40 !text-[#a78bfa] hover:!bg-[#6366f1]/10">
                 <template #icon><RobotOutlined /></template>{{ generatingSceneImg === 'modal' ? '生成中...' : 'AI生成' }}
               </a-button>
-              <!-- <input ref="sceneFileInput" type="file" accept="image/*" class="hidden"
-                     @change="(e) => uploadAndSetImage(e, 'scene')" /> -->
+              <input ref="sceneFileInput" type="file" accept="image/*" class="hidden" hidden
+                     @change="(e) => uploadAndSetImage(e, 'scene')" />
             </div>
           </a-form-item>
         </a-form>

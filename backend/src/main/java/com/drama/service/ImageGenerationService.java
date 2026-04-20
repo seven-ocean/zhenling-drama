@@ -3,12 +3,19 @@ package com.drama.service;
 import com.drama.common.BusinessException;
 import com.drama.common.IdUtils;
 import com.drama.common.ResultCode;
+import com.drama.config.OssProperties;
 import com.drama.entity.Asset;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 
 /**
@@ -21,6 +28,11 @@ public class ImageGenerationService {
 
     private final AiServiceFactory aiServiceFactory;
     private final AssetService assetService;
+    private final FileStorageService fileStorageService;
+    private final OssProperties ossProps;
+
+    // 用于下载AI返回的临时图片
+    private final RestTemplate downloadRestTemplate = new RestTemplate();
 
     /**
      * 生成角色图片并保存为素材
@@ -32,8 +44,7 @@ public class ImageGenerationService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "提示词不能为空");
         }
 
-        String actualProvider = provider != null ? provider : null;  // null = auto-select
-        // 传 null 让适配器使用 DB 中配置的模型（如 MiniMax image-01），避免硬编码不支持的模型名
+        String actualProvider = provider != null ? provider : null;
         String actualModel = model;
 
         log.info("Generating character image: provider={}, model={}", actualProvider, actualModel);
@@ -47,25 +58,14 @@ public class ImageGenerationService {
                         "图片生成失败：AI返回为空，请检查图片生成配置");
             }
 
-            // 保存为素材记录到数据库
-            Asset asset = new Asset();
-            asset.setId(IdUtils.randomId());
-            asset.setDramaId(dramaId);
-            asset.setType("image");
-            asset.setFilename("character_" + characterId + ".png");
-            asset.setFileUrl(imageUrl);
-            asset.setFileSize(0L);  // AI生成的图片，暂时无法获取大小
-            asset.setMimeType("image/png");
-            asset.setSourceType("ai_generated");
-            asset.setExtraData(String.format(
-                    "{\"type\":\"character\",\"characterId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
-                    characterId, actualProvider != null ? actualProvider : "auto", actualModel));
-            asset.setCreatedAt(LocalDateTime.now());
-            asset.setDeleted(0);
+            // 归档AI生成的临时图片到本地/OSS存储（避免链接过期）
+            Asset asset = archiveAiImage(dramaId, imageUrl,
+                    "character_" + characterId + ".png",
+                    "image/png",
+                    String.format("{\"type\":\"character\",\"characterId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
+                            characterId, actualProvider != null ? actualProvider : "auto", actualModel));
 
-            assetService.save(asset);
             log.info("Generated character image: {} for character {}", asset.getId(), characterId);
-            
             return asset;
         } catch (BusinessException e) {
             throw e;
@@ -88,32 +88,27 @@ public class ImageGenerationService {
         String actualProvider = provider != null ? provider : null;
         String actualModel = model;
 
-        log.info("Generating scene image: provider={}, model={}", actualProvider, actualModel);
+        log.info("Generating scene image: dramaId={}, sceneId={}, provider={}, model={}", 
+                dramaId, sceneId, actualProvider, actualModel);
 
         try {
             String imageUrl = aiServiceFactory.generateImage(actualProvider, prompt, actualModel);
 
             if (imageUrl == null || imageUrl.isEmpty()) {
-                throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败：AI返回为空");
+                log.error("[SceneImage] AI returned empty URL. provider={}, model={}, prompt={}", 
+                        actualProvider, actualModel, prompt.substring(0, Math.min(100, prompt.length())));
+                throw new BusinessException(ResultCode.SERVER_ERROR, 
+                        "图片生成失败：AI返回为空，请检查AI配置是否正确，或查看后端日志获取详细信息");
             }
 
-            Asset asset = new Asset();
-            asset.setId(IdUtils.randomId());
-            asset.setDramaId(dramaId);
-            asset.setType("image");
-            asset.setFilename("scene_" + sceneId + ".png");
-            asset.setFileUrl(imageUrl);
-            asset.setMimeType("image/png");
-            asset.setSourceType("ai_generated");
-            asset.setExtraData(String.format(
-                    "{\"type\":\"scene\",\"sceneId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
-                    sceneId, actualProvider != null ? actualProvider : "auto", actualModel));
-            asset.setCreatedAt(LocalDateTime.now());
-            asset.setDeleted(0);
+            // 归档AI生成的临时图片到本地/OSS存储（避免链接过期）
+            Asset asset = archiveAiImage(dramaId, imageUrl,
+                    "scene_" + sceneId + ".png",
+                    "image/png",
+                    String.format("{\"type\":\"scene\",\"sceneId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
+                            sceneId, actualProvider != null ? actualProvider : "auto", actualModel));
 
-            assetService.save(asset);
             log.info("Generated scene image: {} for scene {}", asset.getId(), sceneId);
-
             return asset;
         } catch (BusinessException e) {
             throw e;
@@ -144,23 +139,14 @@ public class ImageGenerationService {
                 throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败：AI返回为空");
             }
 
-            Asset asset = new Asset();
-            asset.setId(IdUtils.randomId());
-            asset.setDramaId(dramaId);
-            asset.setType("image");
-            asset.setFilename("grid_" + System.currentTimeMillis() + ".png");
-            asset.setFileUrl(imageUrl);
-            asset.setMimeType("image/png");
-            asset.setSourceType("ai_generated");
-            asset.setExtraData(String.format(
-                    "{\"type\":\"grid\",\"provider\":\"%s\",\"model\":\"%s\"}",
-                    actualProvider != null ? actualProvider : "auto", actualModel));
-            asset.setCreatedAt(LocalDateTime.now());
-            asset.setDeleted(0);
+            // 归档AI生成的临时图片到本地/OSS存储（避免链接过期）
+            Asset asset = archiveAiImage(dramaId, imageUrl,
+                    "grid_" + System.currentTimeMillis() + ".png",
+                    "image/png",
+                    String.format("{\"type\":\"grid\",\"provider\":\"%s\",\"model\":\"%s\"}",
+                            actualProvider != null ? actualProvider : "auto", actualModel));
 
-            assetService.save(asset);
             log.info("Generated grid image: {}", asset.getId());
-
             return asset;
         } catch (BusinessException e) {
             throw e;
@@ -168,5 +154,79 @@ public class ImageGenerationService {
             log.error("Image generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 归档AI生成的临时图片到本地存储或OSS
+     * 下载AI返回的URL → 转为MultipartFile → 通过FileStorageService上传到用户配置的存储位置
+     *
+     * @param dramaId    剧集ID
+     * @param tempUrl    AI返回的临时图片URL
+     * @param filename   目标文件名
+     * @param mimeType   MIME类型
+     * @param extraData  额外元数据JSON
+     * @return 归档后的Asset记录（fileUrl指向本地/OSS的永久地址）
+     */
+    private Asset archiveAiImage(String dramaId, String tempUrl, String filename,
+                                   String mimeType, String extraData) {
+        try {
+            log.info("[Archive] Downloading AI image from: {} (dramaId={})", tempUrl, dramaId);
+
+            // 1. 下载AI生成的临时图片
+            // 使用URI处理带签名的URL，避免URL编码问题导致403签名不匹配
+            java.net.URI uri = java.net.URI.create(tempUrl);
+            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(uri, byte[].class);
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.warn("[Archive] Failed to download from {}, status={}", tempUrl, response.getStatusCode());
+                return saveAiUrlFallback(dramaId, tempUrl, filename, mimeType, extraData);
+            }
+
+            byte[] imageData = response.getBody();
+            log.info("[Archive] Downloaded {} bytes from {}", imageData.length, tempUrl);
+
+            // 2. 通过 FileStorageService.uploadBytes 上传到配置的存储（本地 or OSS）
+            //    自动处理 OSS 上传 + ACL 设置 + 本地存储
+            Asset archivedAsset = fileStorageService.uploadBytes(
+                    imageData, filename, dramaId, "image", mimeType);
+
+            // 3. 补充 AI 相关元数据
+            archivedAsset.setSourceType("ai_archived");
+            archivedAsset.setExtraData(extraData);
+            assetService.updateById(archivedAsset);
+
+            log.info("[Archive] Successfully archived AI image → id={}, url={}, sourceType={}",
+                    archivedAsset.getId(), archivedAsset.getFileUrl(), archivedAsset.getSourceType());
+
+            return archivedAsset;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[Archive] Failed to archive AI image, using fallback URL: {}", e.getMessage());
+            return saveAiUrlFallback(dramaId, tempUrl, filename, mimeType, extraData);
+        }
+    }
+
+    /**
+     * 降级方案：归档失败时直接保存AI返回的URL（可能过期）
+     */
+    private Asset saveAiUrlFallback(String dramaId, String tempUrl, String filename,
+                                      String mimeType, String extraData) {
+        Asset asset = new Asset();
+        asset.setId(IdUtils.randomId());
+        asset.setDramaId(dramaId);
+        asset.setType("image");
+        asset.setFilename(filename);
+        asset.setFileUrl(tempUrl);
+        asset.setFileSize(0L);
+        asset.setMimeType(mimeType);
+        asset.setSourceType("ai_generated_fallback");
+        asset.setExtraData(extraData);
+        asset.setCreatedAt(LocalDateTime.now());
+        asset.setDeleted(0);
+        assetService.save(asset);
+        log.warn("[Fallback] Saved AI image as temporary URL: {} -> id={}", tempUrl, asset.getId());
+        return asset;
     }
 }

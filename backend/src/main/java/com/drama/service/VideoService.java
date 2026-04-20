@@ -185,6 +185,19 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
     }
 
     /**
+     * 查询指定分镜的所有视频
+     */
+    public List<Video> listByStoryboard(String dramaId, int episodeNumber, String storyboardId) {
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Video::getDramaId, dramaId)
+               .eq(Video::getEpisodeNumber, episodeNumber)
+               .eq(Video::getStoryboardId, storyboardId)
+               .eq(Video::getDeleted, 0)
+               .orderByDesc(Video::getCreatedAt);
+        return this.list(wrapper);
+    }
+
+    /**
      * 删除视频
      */
     @Transactional

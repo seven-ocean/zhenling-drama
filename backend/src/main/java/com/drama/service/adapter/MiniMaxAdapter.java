@@ -135,7 +135,10 @@ public class MiniMaxAdapter implements AiAdapter {
 
     @Override
     public String generateImage(String prompt, String model) {
-        if (!isConfigured()) return "";
+        if (!isConfigured()) {
+            log.warn("[MiniMax] Image generation skipped: adapter not configured");
+            return "";
+        }
 
         try {
             // 原生接口：POST /v1/image_generation
@@ -148,21 +151,27 @@ public class MiniMaxAdapter implements AiAdapter {
             body.append("\"prompt\": ").append(objectMapper.writeValueAsString(prompt)).append(", ");
             body.append("\"aspect_ratio\": \"16:9\", ");
             body.append("\"response_format\": \"url\", ");
-            body.append("\"n\": 1");
+            body.append("\"n\": 1, ");
+            // content_safe=false: 放宽MiniMax内容审核，避免正常创作提示词被误判为 sensitive
+            body.append("\"content_safe\": false");
             body.append("}");
 
-            log.info("[MiniMax] Image generation: model={}", useModel);
+            log.info("[MiniMax] Image generation: model={}, prompt={}", useModel, prompt.substring(0, Math.min(50, prompt.length())));
+            log.debug("[MiniMax] Request body: {}", body);
+            
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST,
                     new HttpEntity<>(body.toString(), authHeaders()),
                     String.class);
 
+            log.debug("[MiniMax] Image response status: {}, body: {}", response.getStatusCode(), response.getBody());
+
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
 
                 if (!isSuccess(root)) {
-                    log.warn("[MiniMax] Image gen failed: {}",
-                            root.path("base_resp").path("status_msg").asText("unknown"));
+                    String errorMsg = root.path("base_resp").path("status_msg").asText("unknown");
+                    log.warn("[MiniMax] Image gen failed: {}, full response: {}", errorMsg, response.getBody());
                     return "";
                 }
 
@@ -170,8 +179,14 @@ public class MiniMaxAdapter implements AiAdapter {
                 JsonNode data = root.path("data");
                 JsonNode imageUrls = data.path("image_urls");
                 if (imageUrls.isArray() && imageUrls.size() > 0) {
-                    return imageUrls.get(0).asText("");
+                    String imageUrl = imageUrls.get(0).asText("");
+                    log.info("[MiniMax] Image generated successfully: {}", imageUrl);
+                    return imageUrl;
+                } else {
+                    log.warn("[MiniMax] Image gen response has no image_urls, data: {}", data);
                 }
+            } else {
+                log.warn("[MiniMax] Image gen http failed: status={}, body={}", response.getStatusCode(), response.getBody());
             }
         } catch (Exception e) {
             log.error("[MiniMax] Image generation error: {}", e.getMessage(), e);

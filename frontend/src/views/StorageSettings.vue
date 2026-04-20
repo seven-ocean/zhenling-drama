@@ -69,6 +69,34 @@ const previewType = ref<'image' | 'video' | 'audio'>('image')
 const previewLoading = ref(false)
 const previewError = ref('')
 
+// 根据实际数据（mimeType/filename）推断真实类型，防止数据库type字段不准确导致渲染错误
+const getRealFileType = (item: any): 'image' | 'video' | 'audio' | 'file' => {
+  // 优先用数据库类型字段
+  const dbType = item.type
+  if (dbType === 'video' || dbType === 'audio') return dbType
+  
+  // 图片：如果数据库标记为image，再通过mimeType二次验证
+  if (dbType === 'image') return 'image'
+  
+  // 其他情况（file或空）：通过mimeType和扩展名兜底判断
+  const mime = item.mimeType || ''
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('image/')) return 'image'
+  
+  // 通过扩展名判断
+  const fname = item.filename || ''
+  const ext = fname.split('.').pop()?.toLowerCase() || ''
+  const videoExts = ['mp4','mkv','avi','mov','wmv','flv','webm']
+  const audioExts = ['mp3','wav','ogg','aac','flac','m4a']
+  const imageExts = ['jpg','jpeg','png','gif','bmp','webp','svg']
+  if (videoExts.includes(ext)) return 'video'
+  if (audioExts.includes(ext)) return 'audio'
+  if (imageExts.includes(ext)) return 'image'
+  
+  return 'file'
+}
+
 // 打开图片预览（Ant Design a-image 内置）
 // 打开视频/音频预览弹窗
 const openPreview = (item: any) => {
@@ -76,14 +104,15 @@ const openPreview = (item: any) => {
   previewLoading.value = true
   previewError.value = ''
   
-  if (item.type === 'video') {
+  const realType = getRealFileType(item)
+  if (realType === 'video') {
     previewType.value = 'video'
     previewVisible.value = true
-  } else if (item.type === 'audio') {
+  } else if (realType === 'audio') {
     previewType.value = 'audio'
     previewVisible.value = true
-  } else if (item.type === 'image') {
-    // 图片用 a-image 的 preview 功能，这里也统一走弹窗体验更好
+  } else if (realType === 'image' || realType === 'file') {
+    // 图片用 a-image 的预览功能，这里统一走弹窗体验更好；file类型也走此分支显示原始内容
     previewType.value = 'image'
     previewVisible.value = true
   }
@@ -387,7 +416,7 @@ onMounted(() => {
           class="group bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/30 transition-all">
 
           <!-- ====== 图片：缩略图 + 点击放大预览 ====== -->
-          <div v-if="item.type === 'image'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
+          <div v-if="getRealFileType(item) === 'image'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
                @click="openPreview(item)">
             <img :src="item.fileUrl" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                  loading="lazy" />
@@ -398,7 +427,7 @@ onMounted(() => {
           </div>
 
           <!-- ====== 视频：封面 + 播放图标 + 点击播放 ====== -->
-          <div v-else-if="item.type === 'video'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
+          <div v-else-if="getRealFileType(item) === 'video'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
                @click="openPreview(item)">
             <video :src="item.fileUrl" muted preload="metadata"
                    class="w-full h-full object-cover" />
@@ -414,7 +443,7 @@ onMounted(() => {
           </div>
 
           <!-- ====== 音频：图标 + 点击播放 ====== -->
-          <div v-else-if="item.type === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer relative"
+          <div v-else-if="getRealFileType(item) === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer relative"
                @click="openPreview(item)">
             <SoundOutlined class="text-[#6366f1] group-hover:scale-110 transition-transform" style="font-size: 48px;" />
             <div v-if="item.duration" class="absolute bottom-2 right-2 text-[10px] text-[#888]">
@@ -422,9 +451,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- ====== 其他文件类型：显示图标 ====== -->
+          <!-- ====== 其他文件类型：显示图标（用真实类型判断） ====== -->
           <div v-else class="aspect-video bg-[#242424] flex items-center justify-center">
             <FileTextOutlined style="font-size: 32px; color: #404040;" />
+            <span class="ml-2 text-xs text-[#606060]">{{ item.filename?.split('.').pop()?.toUpperCase() || '' }}</span>
           </div>
 
           <!-- Info -->

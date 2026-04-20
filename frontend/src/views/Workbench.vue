@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storyboardApi, characterApi, sceneApi } from '@/utils/request'
 import { aiApi } from '@/utils/ai'
+import { episodeExportApi } from '@/utils/episodeExport'
 import { message as AMessage } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
@@ -13,6 +14,9 @@ import {
   SendOutlined,
   VideoCameraOutlined,
   AppstoreOutlined,
+  ExportOutlined,
+  DownloadOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -28,6 +32,76 @@ const loadingSb = ref(false)
 // ====== AI生成 ======
 const scriptText = ref('')
 const generatingSb = ref(false)
+
+// ====== 整集导出 ======
+const exporting = ref(false)
+const exportHistory = ref<any[]>([])
+const loadingHistory = ref(false)
+const showExportPanel = ref(false)
+const episodeNumber = ref(1)
+
+// 加载导出历史
+const loadExportHistory = async () => {
+  loadingHistory.value = true
+  try {
+    const res = await episodeExportApi.list(dramaId, episodeNumber.value, 1, 5)
+    if (res.code === 200) {
+      exportHistory.value = res.data?.records || []
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+// 导出整集
+const exportEpisode = async () => {
+  if (storyboards.value.length === 0) {
+    AMessage.warning('没有分镜，无法导出')
+    return
+  }
+  
+  exporting.value = true
+  try {
+    const res = await episodeExportApi.exportEpisode(dramaId, episodeNumber.value)
+    if (res.code === 200 && res.data) {
+      AMessage.success('整集导出成功')
+      // 刷新历史记录
+      await loadExportHistory()
+      // 如果成功且有URL，提供下载
+      if (res.data.exportUrl) {
+        window.open(res.data.exportUrl, '_blank')
+      }
+    } else {
+      AMessage.error(res.message || '导出失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '导出失败，请检查FFmpeg是否安装')
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 格式化时长
+const formatDuration = (seconds?: number) => {
+  if (!seconds) return '--:--'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+// 格式化时间
+const formatTime = (time?: string) => {
+  if (!time) return ''
+  const date = new Date(time)
+  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`
+}
+
+// 打开URL
+const openUrl = (url: string) => {
+  window.open(url, '_blank')
+}
 
 const generateFromScript = async () => {
   if (!scriptText.value.trim()) { AMessage.warning('请输入剧本内容'); return }
@@ -163,6 +237,7 @@ onMounted(() => {
   loadStoryboards()
   loadCharacters()
   loadScenes()
+  loadExportHistory()
 })
 </script>
 
@@ -176,27 +251,96 @@ onMounted(() => {
       <h1 class="text-lg sm:text-xl font-semibold text-[#f5f5f5] truncate">工作台</h1>
     </div>
 
-    <!-- Tab Bar -->
-    <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-      <a-button
-        v-for="tab in [
-          { key: 'storyboard', label: '分镜编辑器', icon: VideoCameraOutlined },
-          { key: 'character', label: '角色图', icon: UserOutlined },
-          { key: 'scene', label: '场景图', icon: AppstoreOutlined }
-        ]"
-        :key="tab.key"
-        :type="activeTab === tab ? 'primary' : 'default'"
-        size="small"
-        @click="activeTab = tab.key"
-        :class="[
-          '!rounded-xl !font-medium whitespace-nowrap shrink-0',
-          activeTab !== tab && '!bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0] hover:!text-[#f5f5f5] hover:!bg-[#242424]'
-        ]"
-      >
-        <template #icon><component :is="tab.icon" /></template>
-        {{ tab.label }}
-        <span v-if="tab.key === 'storyboard' && storyboards.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ storyboards.length }}</span>
-      </a-button>
+    <!-- Tab Bar + 整集导出 -->
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar flex-1">
+        <a-button
+          v-for="tab in [
+            { key: 'storyboard', label: '分镜编辑器', icon: VideoCameraOutlined },
+            { key: 'character', label: '角色图', icon: UserOutlined },
+            { key: 'scene', label: '场景图', icon: AppstoreOutlined }
+          ]"
+          :key="tab.key"
+          :type="activeTab === tab.key ? 'primary' : 'default'"
+          size="small"
+          @click="activeTab = tab.key"
+          :class="[
+            '!rounded-xl !font-medium whitespace-nowrap shrink-0',
+            activeTab !== tab.key && '!bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0] hover:!text-[#f5f5f5] hover:!bg-[#242424]'
+          ]"
+        >
+          <template #icon><component :is="tab.icon" /></template>
+          {{ tab.label }}
+          <span v-if="tab.key === 'storyboard' && storyboards.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ storyboards.length }}</span>
+        </a-button>
+      </div>
+      
+      <!-- 整集导出按钮 -->
+      <div class="flex items-center gap-2 shrink-0">
+        <a-button 
+          type="primary" 
+          :loading="exporting"
+          :disabled="storyboards.length === 0"
+          @click="exportEpisode"
+          class="!rounded-xl"
+        >
+          <template #icon><ExportOutlined /></template>
+          {{ exporting ? '导出中...' : '整集导出' }}
+        </a-button>
+        <a-button 
+          type="default" 
+          @click="showExportPanel = !showExportPanel"
+          class="!rounded-xl !bg-[#1a1a1a] !border-[#2a2a2a] !text-[#a0a0a0]"
+        >
+          <template #icon><HistoryOutlined /></template>
+          历史
+        </a-button>
+      </div>
+    </div>
+    
+    <!-- 导出历史面板 -->
+    <div v-if="showExportPanel" class="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a]">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="text-sm font-medium text-[#f5f5f5] flex items-center gap-2">
+          <HistoryOutlined />
+          导出历史
+        </h4>
+        <a-button type="link" size="small" @click="loadExportHistory" :loading="loadingHistory">
+          刷新
+        </a-button>
+      </div>
+      
+      <div v-if="loadingHistory" class="flex justify-center py-4">
+        <a-spin size="small" />
+      </div>
+      
+      <div v-else-if="exportHistory.length === 0" class="text-center py-4 text-[#888]">
+        暂无导出记录
+      </div>
+      
+      <div v-else class="space-y-2">
+        <div v-for="item in exportHistory" :key="item.id" 
+          class="flex items-center justify-between p-3 bg-[#242424] rounded-lg">
+          <div class="flex items-center gap-3 min-w-0">
+            <a-tag v-if="item.status === 'completed'" color="success" class="!rounded-lg shrink-0">成功</a-tag>
+            <a-tag v-else-if="item.status === 'failed'" color="error" class="!rounded-lg shrink-0">失败</a-tag>
+            <a-tag v-else color="processing" class="!rounded-lg shrink-0">处理中</a-tag>
+            <div class="min-w-0">
+              <p class="text-sm text-[#f5f5f5] truncate">第{{ item.episodeNumber }}集 · {{ item.shotCount }}个分镜</p>
+              <p class="text-xs text-[#888]">{{ formatTime(item.createdAt) }} · 时长 {{ formatDuration(item.duration) }}</p>
+            </div>
+          </div>
+          <a-button 
+            v-if="item.exportUrl" 
+            type="link" 
+            size="small"
+            @click="openUrl(item.exportUrl)"
+          >
+            <template #icon><DownloadOutlined /></template>
+            下载
+          </a-button>
+        </div>
+      </div>
     </div>
 
     <!-- ========== 分镜 Tab ========== -->
