@@ -8,8 +8,17 @@
         "profession": "高级开发工程师",
         "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/SeniorDeveloper/SeniorDeveloper.png",
         "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
-        "usedAt": 1776601014325,
+        "usedAt": 1776672666051,
         "industryId": "all"
+      },
+      {
+        "expertId": "UserExperienceArchitect",
+        "name": "体验达",
+        "profession": "用户体验架构师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/01-Design/UserExperienceArchitect/UserExperienceArchitect.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/01-Design/UserExperienceArchitect/UserExperienceArchitect_zh.md",
+        "usedAt": 1776667425254,
+        "industryId": "01-Design"
       },
       {
         "expertId": "NarrativeDesigner",
@@ -22,5 +31,5 @@
       }
     ]
   },
-  "lastUpdated": 1776601124189
+  "lastUpdated": 1776699104324
 }

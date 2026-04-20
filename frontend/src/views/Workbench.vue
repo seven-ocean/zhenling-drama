@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { storyboardApi, characterApi, sceneApi } from '@/utils/request'
+import { storyboardApi, characterApi, sceneApi, videoApi } from '@/utils/request'
 import { aiApi } from '@/utils/ai'
 import { episodeExportApi } from '@/utils/episodeExport'
 import { message as AMessage } from 'ant-design-vue'
@@ -17,6 +17,8 @@ import {
   ExportOutlined,
   DownloadOutlined,
   HistoryOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -146,9 +148,35 @@ const shotTypes = [
   { value: 'extreme-close-up', label: '特写' },
 ]
 
+// 获取分镜关联的角色和场景图片
+const relatedCharImage = ref('')
+const relatedSceneImage = ref('')
+const relatedCharName = ref('')
+const relatedSceneName = ref('')
+
 const openSbEditor = (shot?: any) => {
   editingSb.value = shot || null
   sbForm.value = shot ? { ...shot } : {}
+  
+  // 加载关联的角色和场景图片
+  if (shot?.characterId) {
+    const char = characters.value.find(c => c.id === shot.characterId)
+    relatedCharImage.value = char?.imageUrl || ''
+    relatedCharName.value = char?.name || shot.characterName || '未知角色'
+  } else {
+    relatedCharImage.value = ''
+    relatedCharName.value = shot?.characterName || ''
+  }
+  
+  if (shot?.sceneId) {
+    const scene = scenes.value.find(s => s.id === shot.sceneId)
+    relatedSceneImage.value = scene?.imageUrl || ''
+    relatedSceneName.value = scene?.name || '未知场景'
+  } else {
+    relatedSceneImage.value = ''
+    relatedSceneName.value = ''
+  }
+  
   sbEditorOpen.value = true
 }
 
@@ -170,7 +198,27 @@ const deleteShot = async (id: string) => {
     await storyboardApi.delete(id)
     storyboards.value = storyboards.value.filter(s => s.id !== id)
     AMessage.success('已删除')
+    // 重新加载列表确保数据同步
+    await loadStoryboards()
   } catch (e: any) { AMessage.error(e?.message || '删除失败') }
+}
+
+// 跳转到视频生成页面（媒体工作室）
+const goToVideoGeneration = (shot: any) => {
+  // 构建查询参数，传递分镜信息
+  const queryParams = new URLSearchParams()
+  queryParams.set('storyboardId', shot.id)
+  queryParams.set('action', shot.action || '')
+  if (shot.gridImageUrl) queryParams.set('gridImageUrl', shot.gridImageUrl)
+  if (shot.characterImageUrl) queryParams.set('characterImageUrl', shot.characterImageUrl)
+  if (shot.sceneImageUrl) queryParams.set('sceneImageUrl', shot.sceneImageUrl)
+
+  // 跳转到媒体工作室页面
+  router.push({
+    path: `/media/${dramaId}`,
+    query: { tab: 'video', ...Object.fromEntries(queryParams) }
+  })
+  AMessage.success('已切换到视频生成页面')
 }
 
 // ====== 角色图生成 ======
@@ -233,11 +281,114 @@ const generateSceneImg = async (scene: any) => {
   finally { generatingSceneImg.value = null }
 }
 
+// ====== 视频生成 ======
+const videoImageUrl = ref('')
+const generatingVideo = ref(false)
+const videos = ref<any[]>([])
+const videosLoading = ref(false)
+const selectedVideoModel = ref('MiniMax-Hailuo-2.3')
+const playingVideoId = ref<string | null>(null)
+
+// 视频模型选项
+const videoModels = [
+  { value: 'MiniMax-Hailuo-2.3', label: 'MiniMax 海螺 2.3' },
+  { value: 'video-01', label: 'MiniMax Video-01' },
+]
+
+// 生成视频
+const generateVideo = async () => {
+  if (!videoImageUrl.value.trim()) { AMessage.warning('请输入参考图片URL'); return }
+  generatingVideo.value = true
+  try {
+    const res = await videoApi.generate({
+      dramaId,
+      episodeNumber: episodeNumber.value,
+      storyboardId: '',
+      imageUrl: videoImageUrl.value,
+      model: selectedVideoModel.value,
+    })
+    if (res.code === 200 && res.data) {
+      videos.value.unshift(res.data)
+      AMessage.success('视频任务已提交')
+      if (res.data.status === 'processing') {
+        AMessage.info('视频正在异步生成中，请稍后查看')
+      }
+      videoImageUrl.value = ''
+    } else {
+      AMessage.error(res.message || '视频生成失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '视频生成失败，请检查AI配置')
+  } finally {
+    generatingVideo.value = false
+  }
+}
+
+// 加载视频列表
+const loadVideos = async () => {
+  videosLoading.value = true
+  try {
+    const res = await videoApi.listByDrama(dramaId)
+    if (res.code === 200) videos.value = res.data || []
+  } catch (e) { console.error(e) }
+  finally { videosLoading.value = false }
+}
+
+// 删除视频
+const deleteVideo = async (id: string) => {
+  try {
+    await videoApi.delete(id)
+    videos.value = videos.value.filter(v => v.id !== id)
+    AMessage.success('已删除')
+  } catch (e: any) { AMessage.error(e?.message || '删除失败') }
+}
+
+// 播放/停止视频预览
+const togglePlayVideo = (id: string) => {
+  playingVideoId.value = playingVideoId.value === id ? null : id
+}
+
+// 轮询处理中的视频
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const pollVideos = () => {
+  const hasProcessing = videos.value.some((v: any) => v.status === 'processing')
+  if (hasProcessing) {
+    videoApi.poll().then(() => loadVideos()).catch(() => {})
+  }
+}
+
+// 状态标签映射
+const statusColorMap: Record<string, string> = {
+  completed: '#16a34a15',
+  processing: '#ca8a0415',
+  pending: '#3b82f615',
+  failed: '#dc262615',
+}
+const statusTextColorMap: Record<string, string> = {
+  completed: '!text-green-400',
+  processing: '!text-yellow-400',
+  pending: '!text-blue-400',
+  failed: '!text-red-400',
+}
+const statusLabelMap: Record<string, string> = {
+  completed: '已完成',
+  processing: '处理中',
+  pending: '等待中',
+  failed: '失败',
+}
+
 onMounted(() => {
   loadStoryboards()
   loadCharacters()
   loadScenes()
   loadExportHistory()
+  loadVideos()
+  // 每5秒轮询一次视频状态
+  pollTimer = setInterval(pollVideos, 5000)
+})
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 
@@ -258,7 +409,8 @@ onMounted(() => {
           v-for="tab in [
             { key: 'storyboard', label: '分镜编辑器', icon: VideoCameraOutlined },
             { key: 'character', label: '角色图', icon: UserOutlined },
-            { key: 'scene', label: '场景图', icon: AppstoreOutlined }
+            { key: 'scene', label: '场景图', icon: AppstoreOutlined },
+            { key: 'video', label: '视频生成', icon: PlayCircleOutlined }
           ]"
           :key="tab.key"
           :type="activeTab === tab.key ? 'primary' : 'default'"
@@ -272,6 +424,7 @@ onMounted(() => {
           <template #icon><component :is="tab.icon" /></template>
           {{ tab.label }}
           <span v-if="tab.key === 'storyboard' && storyboards.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ storyboards.length }}</span>
+          <span v-if="tab.key === 'video' && videos.length" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">{{ videos.length }}</span>
         </a-button>
       </div>
       
@@ -373,24 +526,51 @@ onMounted(() => {
       <!-- 列表 -->
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         <div v-for="(shot, idx) in storyboards" :key="shot.id"
-          @click="openSbEditor(shot)"
-          class="group p-3 sm:p-4 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] hover:border-[#6366f1]/40 cursor-pointer transition-all">
-          <div class="flex items-center justify-between mb-2">
-            <span class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <span class="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-lg bg-[#6366f1]/10 text-[10px] sm:text-sm font-bold text-[#6366f1] shrink-0">{{ shot.shotNumber || idx + 1 }}</span>
-              <span class="px-1.5 sm:px-2 py-0.5 bg-[#6366f1]/15 text-[#a78bfa] rounded text-[10px] sm:text-xs shrink-0">{{ shotTypes.find(t=>t.value===shot.shotType)?.label }}</span>
-            </span>
-            <a-popconfirm title="确定删除该分镜？" ok-text="确定" cancel-text="取消" @confirm="deleteShot(shot.id)">
-              <a-button type="text" danger size="small" class="opacity-0 group-hover:opacity-100 !p-1" @click.stop>
-                <template #icon><DeleteOutlined /></template>
-              </a-button>
-            </a-popconfirm>
+          class="group p-3 sm:p-4 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] hover:border-[#6366f1]/40 transition-all relative">
+          <!-- 点击编辑区域 -->
+          <div @click="openSbEditor(shot)" class="cursor-pointer">
+            <div class="flex items-center justify-between mb-2">
+              <span class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <span class="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center rounded-lg bg-[#6366f1]/10 text-[10px] sm:text-sm font-bold text-[#6366f1] shrink-0">{{ shot.shotNumber || idx + 1 }}</span>
+                <span class="px-1.5 sm:px-2 py-0.5 bg-[#6366f1]/15 text-[#a78bfa] rounded text-[10px] sm:text-xs shrink-0">{{ shotTypes.find(t=>t.value===shot.shotType)?.label }}</span>
+              </span>
+              <span @click.stop>
+                <a-popconfirm title="确定删除该分镜？" ok-text="确定" cancel-text="取消" @confirm="deleteShot(shot.id)">
+                  <a-button type="text" danger size="small" class="opacity-0 group-hover:opacity-100 !p-1">
+                    <template #icon><DeleteOutlined /></template>
+                  </a-button>
+                </a-popconfirm>
+              </span>
+            </div>
+            <p class="text-xs sm:text-sm text-[#d0d0d0] mb-1 line-clamp-2">{{ shot.action || '无动作描述' }}</p>
+            <p v-if="shot.dialogue" class="text-[10px] xs:text-xs text-[#888] italic line-clamp-1">「{{ shot.dialogue }}」</p>
+            <div class="mt-2 flex flex-wrap gap-1">
+              <a-tag v-if="shot.characterName" color="#fffaf015" class="!text-yellow-400/70 !rounded-[10px] !text-[9px] sm:!text-[10px]">{{ shot.characterName }}</a-tag>
+              <a-tag v-if="shot.shotDirection" color="#eff6ff15" class="!text-blue-400/70 !rounded-[10px] !text-[9px] sm:!text-[10px]">{{ shot.shotDirection }}</a-tag>
+            </div>
+            <!-- 图片标记 -->
+            <div v-if="shot.gridImageUrl || shot.characterImageUrl || shot.sceneImageUrl" class="mt-2 flex gap-1">
+              <span v-if="shot.sceneImageUrl" title="有场景图" class="text-[10px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded">场景图</span>
+              <span v-if="shot.characterImageUrl" title="有角色图" class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">角色图</span>
+              <span v-if="shot.gridImageUrl" title="有宫格图" class="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded">宫格图</span>
+            </div>
+            <!-- 调试信息：显示图片URL状态 -->
+            <div class="mt-1 text-[8px] text-[#555]">
+              grid:{{ shot.gridImageUrl ? '有' : '无' }} | char:{{ shot.characterImageUrl ? '有' : '无' }} | scene:{{ shot.sceneImageUrl ? '有' : '无' }}
+            </div>
           </div>
-          <p class="text-xs sm:text-sm text-[#d0d0d0] mb-1 line-clamp-2">{{ shot.action || '无动作描述' }}</p>
-          <p v-if="shot.dialogue" class="text-[10px] xs:text-xs text-[#888] italic line-clamp-1">「{{ shot.dialogue }}」</p>
-          <div class="mt-2 flex flex-wrap gap-1">
-            <a-tag v-if="shot.characterName" color="#fffaf015" class="!text-yellow-400/70 !rounded-[10px] !text-[9px] sm:!text-[10px]">{{ shot.characterName }}</a-tag>
-            <a-tag v-if="shot.shotDirection" color="#eff6ff15" class="!text-blue-400/70 !rounded-[10px] !text-[9px] sm:!text-[10px]">{{ shot.shotDirection }}</a-tag>
+          <!-- 生成视频按钮 -->
+          <div class="mt-3 pt-2 border-t border-[#2a2a2a]">
+            <a-button
+              type="primary"
+              size="small"
+              block
+              :disabled="!shot.gridImageUrl && !shot.characterImageUrl && !shot.sceneImageUrl"
+              @click.stop="goToVideoGeneration(shot)"
+            >
+              <template #icon><VideoCameraOutlined /></template>
+              {{ (!shot.gridImageUrl && !shot.characterImageUrl && !shot.sceneImageUrl) ? '无图无法生成' : '生成视频' }}
+            </a-button>
           </div>
         </div>
       </div>
@@ -475,6 +655,114 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- ========== 视频生成 Tab ========== -->
+    <div v-show="activeTab === 'video'" class="space-y-4 w-full">
+      <!-- 视频生成区 -->
+      <div class="bg-gradient-to-br from-[#151a25] to-[#101520] rounded-xl p-4 sm:p-5 border border-[#222a38]">
+        <h4 class="text-sm font-medium text-[#f5f5f5] mb-3 sm:mb-4 flex items-center gap-2">
+          <VideoCameraOutlined />
+          图片 → AI 视频
+        </h4>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
+          <div class="sm:col-span-2">
+            <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">参考图片 URL</label>
+            <a-input v-model:value="videoImageUrl" placeholder="输入分镜图、宫格图或角色图的 URL..." size="large" />
+          </div>
+          <div>
+            <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">视频模型</label>
+            <a-select v-model:value="selectedVideoModel" size="large" class="w-full">
+              <a-select-option v-for="m in videoModels" :key="m.value" :value="m.value">{{ m.label }}</a-select-option>
+            </a-select>
+          </div>
+          <div class="flex items-end">
+            <a-button
+              type="primary"
+              :loading="generatingVideo"
+              :disabled="!videoImageUrl.trim()"
+              @click="generateVideo"
+              class="w-full !rounded-xl"
+              size="large"
+            >
+              <template #icon><VideoCameraOutlined /></template>
+              {{ generatingVideo ? '生成中...' : '生成视频' }}
+            </a-button>
+          </div>
+        </div>
+
+        <p class="text-[10px] text-[#555] mt-1">💡 提示：先在「场景图」Tab 生成分镜图片，复制图片 URL 到此处生成视频</p>
+      </div>
+
+      <!-- 视频记录列表 -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="text-xs sm:text-sm font-medium text-[#808080]">视频记录 ({{ videos.length }})</h4>
+          <a-button size="small" type="text" :loading="videosLoading" @click="loadVideos">
+            <template #icon><ReloadOutlined /></template> 刷新
+          </a-button>
+        </div>
+
+        <a-spin :spinning="videosLoading">
+          <div v-if="videos.length > 0" class="space-y-3">
+            <div v-for="v in videos" :key="v.id"
+              class="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden group hover:border-[#6366f1]/40 transition-all">
+
+              <!-- 视频预览区 / 缩略图 -->
+              <div v-if="v.videoUrl" class="relative aspect-video bg-[#0f0f0f] cursor-pointer"
+                   @click="togglePlayVideo(v.id)">
+                <!-- 播放状态：显示播放器 -->
+                <video v-show="playingVideoId === v.id"
+                       :src="v.videoUrl"
+                       controls
+                       autoplay
+                       class="w-full h-full object-contain"
+                       @ended="playingVideoId = null" />
+                <!-- 非播放状态：显示封面+播放按钮 -->
+                <div v-show="playingVideoId !== v.id" class="absolute inset-0 flex flex-col items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                  <PlayCircleOutlined style="font-size: 48px; color: #fff; opacity: 0.9;" />
+                  <span class="mt-2 text-xs text-white/70">点击播放</span>
+                  <span v-if="v.duration" class="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 rounded text-[10px] text-white">{{ formatDuration(v.duration) }}</span>
+                </div>
+              </div>
+
+              <!-- 无视频URL时的占位 -->
+              <div v-else class="aspect-video bg-[#111] flex flex-col items-center justify-center">
+                <VideoCameraOutlined style="font-size: 32px; color: #333;" />
+                <span class="text-xs text-[#444] mt-1">{{ v.status === 'processing' ? '等待生成中...' : '无视频文件' }}</span>
+              </div>
+
+              <!-- 信息栏 -->
+              <div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 mb-0.5">
+                    <span class="text-xs sm:text-sm text-[#e0e0e0] font-medium truncate">{{ v.model || '未知模型' }}</span>
+                    <a-tag
+                      :color="statusColorMap[v.status] || '#333'"
+                      :class="[statusTextColorMap[v.status] || '!text-[#808080]', 'shrink-0']"
+                    >
+                      {{ statusLabelMap[v.status] || v.status }}
+                    </a-tag>
+                  </div>
+                  <p class="text-[10px] xs:text-xs text-[#606060] truncate">
+                    第{{ v.episodeNumber }}集 · {{ v.provider }}{{ v.taskId ? ` · ${v.taskId.substring(0, 12)}...` : '' }}
+                  </p>
+                </div>
+                <a-popconfirm title="确定删除该视频？" ok-text="确定" cancel-text="取消" @confirm="deleteVideo(v.id)">
+                  <a-button type="text" danger size="small" class="opacity-0 group-hover:opacity-100 shrink-0 !p-1">
+                    <template #icon><DeleteOutlined /></template>
+                  </a-button>
+                </a-popconfirm>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-center py-12">
+            <a-empty description="尚未生成任何视频，上传图片后点击上方按钮开始生成" :image-style="{ opacity: 0.3 }" />
+          </div>
+        </a-spin>
+      </div>
+    </div>
+
     <!-- ====== 分镜编辑弹窗（Ant Design Modal） ====== -->
     <a-modal
       v-model:open="sbEditorOpen"
@@ -482,10 +770,41 @@ onMounted(() => {
       @ok="saveShot"
       okText="保存"
       cancelText="取消"
-      width="540px"
+      width="640px"
       destroyOnClose
     >
       <div class="space-y-4 pt-2">
+        <!-- 关联图片展示区域 -->
+        <div v-if="relatedCharImage || relatedSceneImage" class="grid grid-cols-2 gap-4 p-3 bg-[#1a1a1a] rounded-lg">
+          <!-- 角色图 -->
+          <div v-if="relatedCharImage" class="space-y-2">
+            <div class="text-xs text-gray-400 flex items-center gap-1">
+              <UserOutlined />
+              角色: {{ relatedCharName }}
+            </div>
+            <div class="relative aspect-square rounded-lg overflow-hidden bg-[#2a2a2a] border border-[#333]">
+              <img :src="relatedCharImage" class="w-full h-full object-cover" />
+            </div>
+          </div>
+          <!-- 场景图 -->
+          <div v-if="relatedSceneImage" class="space-y-2">
+            <div class="text-xs text-gray-400 flex items-center gap-1">
+              <PictureOutlined />
+              场景: {{ relatedSceneName }}
+            </div>
+            <div class="relative aspect-video rounded-lg overflow-hidden bg-[#2a2a2a] border border-[#333]">
+              <img :src="relatedSceneImage" class="w-full h-full object-cover" />
+            </div>
+          </div>
+        </div>
+        
+        <!-- 提示信息：无关联图片 -->
+        <div v-else-if="!relatedCharImage && !relatedSceneImage" class="p-3 bg-[#1a1a1a] rounded-lg text-center">
+          <p class="text-xs text-gray-500">该分镜未关联角色或场景</p>
+        </div>
+
+        <a-divider class="!my-2 !border-[#333]" />
+        
         <a-form layout="vertical">
           <div class="grid grid-cols-2 gap-3">
             <a-form-item label="镜头类型">

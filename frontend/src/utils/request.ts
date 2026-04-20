@@ -57,7 +57,7 @@ export const storyboardApi = {
   create: (data: any) => api('/storyboards', { method: 'POST', body: data }),
   get: (id: string) => api(`/storyboards/${id}`),
   update: (id: string, data: any) => api(`/storyboards/${id}`, { method: 'POST', body: data }),
-  delete: (id: string) => api(`/storyboards/${id}`, { method: 'POST' }),
+  delete: (id: string) => api(`/storyboards/${id}`, { method: 'DELETE' }),
 }
 
 // ====== 音频 API ======

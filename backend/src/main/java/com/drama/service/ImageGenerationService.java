@@ -30,6 +30,7 @@ public class ImageGenerationService {
     private final AssetService assetService;
     private final FileStorageService fileStorageService;
     private final OssProperties ossProps;
+    private final StoryboardService storyboardService;
 
     // 用于下载AI返回的临时图片
     private final RestTemplate downloadRestTemplate = new RestTemplate();
@@ -64,6 +65,9 @@ public class ImageGenerationService {
                     "image/png",
                     String.format("{\"type\":\"character\",\"characterId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
                             characterId, actualProvider != null ? actualProvider : "auto", actualModel));
+
+            // 更新所有关联该角色的分镜记录的 characterImageUrl
+            updateStoryboardCharacterImage(dramaId, characterId, asset.getFileUrl());
 
             log.info("Generated character image: {} for character {}", asset.getId(), characterId);
             return asset;
@@ -107,6 +111,9 @@ public class ImageGenerationService {
                     "image/png",
                     String.format("{\"type\":\"scene\",\"sceneId\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\"}",
                             sceneId, actualProvider != null ? actualProvider : "auto", actualModel));
+
+            // 更新所有关联该场景的分镜记录的 sceneImageUrl
+            updateStoryboardSceneImage(dramaId, sceneId, asset.getFileUrl());
 
             log.info("Generated scene image: {} for scene {}", asset.getId(), sceneId);
             return asset;
@@ -228,5 +235,31 @@ public class ImageGenerationService {
         assetService.save(asset);
         log.warn("[Fallback] Saved AI image as temporary URL: {} -> id={}", tempUrl, asset.getId());
         return asset;
+    }
+
+    /**
+     * 更新关联该角色的所有分镜记录的 characterImageUrl
+     */
+    private void updateStoryboardCharacterImage(String dramaId, String characterId, String imageUrl) {
+        try {
+            storyboardService.updateCharacterImageUrl(dramaId, characterId, imageUrl);
+            log.info("[Storyboard] Updated character image URL for character {} in drama {}", characterId, dramaId);
+        } catch (Exception e) {
+            log.warn("[Storyboard] Failed to update character image URL for character {}: {}", characterId, e.getMessage());
+            // 不抛出异常，避免影响图片生成的主流程
+        }
+    }
+
+    /**
+     * 更新关联该场景的所有分镜记录的 sceneImageUrl
+     */
+    private void updateStoryboardSceneImage(String dramaId, String sceneId, String imageUrl) {
+        try {
+            storyboardService.updateSceneImageUrl(dramaId, sceneId, imageUrl);
+            log.info("[Storyboard] Updated scene image URL for scene {} in drama {}", sceneId, dramaId);
+        } catch (Exception e) {
+            log.warn("[Storyboard] Failed to update scene image URL for scene {}: {}", sceneId, e.getMessage());
+            // 不抛出异常，避免影响图片生成的主流程
+        }
     }
 }

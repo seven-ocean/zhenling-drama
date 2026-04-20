@@ -142,11 +142,41 @@ public class AiServiceFactory {
     }
 
     /**
-     * 视频生成
+     * 视频生成（基础版，向后兼容）
      */
     public String generateVideo(String provider, String imageUrl, String model) {
         AiAdapter adapter = provider != null ? getAdapter(provider) : getAdapterByType("video");
         return adapter.generateVideo(imageUrl, model);
+    }
+
+    /**
+     * 视频生成（多模式支持）
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     */
+    public String generateVideoMultiMode(String provider, String mode, String prompt,
+                                         String imageUrl, String firstFrameUrl, String lastFrameUrl,
+                                         String subjectImageUrl, String model) {
+        // 目前只有 MiniMax 支持多模式
+        if ("minimax".equalsIgnoreCase(provider)) {
+            com.drama.service.adapter.MiniMaxAdapter miniMaxAdapter =
+                    (com.drama.service.adapter.MiniMaxAdapter) getAdapter("minimax");
+            return miniMaxAdapter.generateVideoMultiMode(mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model);
+        }
+        // 其他厂商使用基础版（图生视频）
+        AiAdapter adapter = getAdapter(provider);
+        if ("TEXT_TO_VIDEO".equals(mode)) {
+            // 文生视频：传入空图片，让适配器处理
+            return adapter.generateVideo("", model);
+        }
+        // 其他模式默认使用图生视频
+        String refImage = imageUrl;
+        if (refImage == null || refImage.isEmpty()) {
+            refImage = firstFrameUrl;
+        }
+        if (refImage == null || refImage.isEmpty()) {
+            refImage = subjectImageUrl;
+        }
+        return adapter.generateVideo(refImage, model);
     }
 
     /**

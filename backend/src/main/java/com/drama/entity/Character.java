@@ -23,6 +23,7 @@ public class Character {
     private String voiceProvider;
     private String appearancePrompt;
     private String dialogueStyle;
+    private String previewAudioUrl;
     private Integer sortOrder;
     private String extraData;
     

@@ -19,9 +19,13 @@ import {
   UploadOutlined,
   FolderOpenOutlined,
   CloseCircleOutlined,
+  VideoCameraOutlined,
+  SoundOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons-vue'
 import { storageApi } from '@/utils/storage'
 import { assetApi } from '@/utils/asset'
+import { aiConfigApi, ttsPreviewApi } from '@/utils/aiConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -116,12 +120,146 @@ watch(() => route.params.id, () => {
 // ====== 角色管理 ======
 const charModalOpen = ref(false)
 const editingChar = ref<any>(null)
-const charForm = ref<any>({ name: '', description: '', imageUrl: '', appearancePrompt: '', dialogueStyle: '', voiceId: '' })
+const charForm = ref<any>({ name: '', description: '', imageUrl: '', appearancePrompt: '', dialogueStyle: '', voiceId: '', voiceProvider: '', previewAudioUrl: '' })
+const ttsConfigList = ref<any[]>([])
+const ttsVoices = ref<{ value: string; label: string }[]>([])
+const previewingVoice = ref(false)
+const previewAudioUrl = ref<string>('')
+const previewAudioRef = ref<HTMLAudioElement | null>(null)
 
-const openCharModal = (item?: any) => {
+// MiniMax TTS 官方音色列表（用于下拉选择）- 完整版
+// 参考: https://platform.minimaxi.com/docs/faq/system-voice-id
+const minimaxTTSVoices = [
+  // ====== 中文(普通话) - 标准音色 ======
+  { value: 'male-qn-qingse', label: '🎙️ 青涩青年音色' },
+  { value: 'male-qn-jingying', label: '🎙️ 精英青年音色' },
+  { value: 'male-qn-badao', label: '🎙️ 霸道青年音色' },
+  { value: 'male-qn-daxuesheng', label: '🎙️ 青年大学生音色' },
+  { value: 'female-shaonv', label: '🎙️ 少女音色' },
+  { value: 'female-yujie', label: '🎙️ 御姐音色' },
+  { value: 'female-chengshu', label: '🎙️ 成熟女性音色' },
+  { value: 'female-tianmei', label: '🎙️ 甜美女性音色' },
+  // ====== 中文(普通话) - Beta精品音色 ======
+  { value: 'male-qn-qingse-jingpin', label: '⭐ 青涩青年音色-beta' },
+  { value: 'male-qn-jingying-jingpin', label: '⭐ 精英青年音色-beta' },
+  { value: 'male-qn-badao-jingpin', label: '⭐ 霸道青年音色-beta' },
+  { value: 'male-qn-daxuesheng-jingpin', label: '⭐ 青年大学生音色-beta' },
+  { value: 'female-shaonv-jingpin', label: '⭐ 少女音色-beta' },
+  { value: 'female-yujie-jingpin', label: '⭐ 御姐音色-beta' },
+  { value: 'female-chengshu-jingpin', label: '⭐ 成熟女性音色-beta' },
+  { value: 'female-tianmei-jingpin', label: '⭐ 甜美女性音色-beta' },
+  // ====== 中文(普通话) - 特色角色音色 ======
+  { value: 'clever_boy', label: '🧒 聪明男童' },
+  { value: 'cute_boy', label: '🧒 可爱男童' },
+  { value: 'lovely_girl', label: '👧 萌萌女童' },
+  { value: 'cartoon_pig', label: '🐷 卡通猪小琪' },
+  { value: 'bingjiao_didi', label: '😈 病娇弟弟' },
+  { value: 'junlang_nanyou', label: '👦 俊朗男友' },
+  { value: 'chunzhen_xuedi', label: '⭐ 纯真学弟' },
+  { value: 'lengdan_xiongzhang', label: '🧊 冷淡学长' },
+  { value: 'badao_shaoye', label: '⭐ 霸道少爷' },
+  { value: 'tianxin_xiaoling', label: '⭐ 甜心小玲' },
+  { value: 'qiaopi_mengmei', label: '😜 俏皮萌妹' },
+  { value: 'wumei_yujie', label: '💋 妩媚御姐' },
+  { value: 'diadia_xuemei', label: '⭐ 嗲嗲学妹' },
+  { value: 'danya_xuejie', label: '📚 淡雅学姐' },
+  // ====== 中文(普通话) - 专业/特色音色 ======
+  { value: 'Chinese (Mandarin)_Reliable_Executive', label: '💼 沉稳高管' },
+  { value: 'Chinese (Mandarin)_News_Anchor', label: '📺 新闻女声' },
+  { value: 'Chinese (Mandarin)_Mature_Woman', label: '💅 傲娇御姐' },
+  { value: 'Chinese (Mandarin)_Unrestrained_Young_Man', label: '⭐ 不羁青年' },
+  { value: 'Arrogant_Miss', label: '😤 嚣张小姐' },
+  { value: 'Robot_Armor', label: '🤖 机械战甲' },
+  { value: 'Chinese (Mandarin)_Kind-hearted_Antie', label: '👵 热心大婶' },
+  { value: 'Chinese (Mandarin)_HK_Flight_Attendant', label: '✈️ 港普空姐' },
+  { value: 'Chinese (Mandarin)_Humorous_Elder', label: '😂 搞笑大爷' },
+  { value: 'Chinese (Mandarin)_Gentleman', label: '🎩 温润男声' },
+  { value: 'Chinese (Mandarin)_Warm_Bestie', label: '👭 温暖闺蜜' },
+  { value: 'Chinese (Mandarin)_Male_Announcer', label: '🎤 播报男声' },
+  { value: 'Chinese (Mandarin)_Sweet_Lady', label: '🌸 甜美女声' },
+  { value: 'Chinese (Mandarin)_Southern_Young_Man', label: '🌾 南方小哥' },
+  { value: 'Chinese (Mandarin)_Wise_Women', label: '📖 阅历姐姐' },
+  { value: 'Chinese (Mandarin)_Gentle_Youth', label: '🍃 温润青年' },
+  { value: 'Chinese (Mandarin)_Warm_Girl', label: '☀️ 温暖少女' },
+  { value: 'Chinese (Mandarin)_Kind-hearted_Elder', label: '👵 花甲奶奶' },
+  { value: 'Chinese (Mandarin)_Cute_Spirit', label: '🦄 憨憨萌兽' },
+  { value: 'Chinese (Mandarin)_Radio_Host', label: '📻 电台男主播' },
+  { value: 'Chinese (Mandarin)_Lyrical_Voice', label: '🎵 抒情男声' },
+  { value: 'Chinese (Mandarin)_Straightforward_Boy', label: '🗣️ 率真弟弟' },
+  { value: 'Chinese (Mandarin)_Sincere_Adult', label: '🙏 真诚青年' },
+  { value: 'Chinese (Mandarin)_Gentle_Senior', label: '🌙 温柔学姐' },
+  { value: 'Chinese (Mandarin)_Stubborn_Friend', label: '😤 嘴硬竹马' },
+  { value: 'Chinese (Mandarin)_Crisp_Girl', label: '✨ 清脆少女' },
+  { value: 'Chinese (Mandarin)_Pure-hearted_Boy', label: '💙 清澈邻家弟弟' },
+  { value: 'Chinese (Mandarin)_Soft_Girl', label: '🌸 柔和少女' },
+  // ====== 中文(粤语) ======
+  { value: 'Cantonese_ProfessionalHost（F)', label: '🇭🇰 粤语-专业女主持' },
+  { value: 'Cantonese_GentleLady', label: '🇭🇰 粤语-温柔女声' },
+  { value: 'Cantonese_ProfessionalHost（M)', label: '🇭🇰 粤语-专业男主持' },
+  { value: 'Cantonese_PlayfulMan', label: '🇭🇰 粤语-活泼男声' },
+  { value: 'Cantonese_CuteGirl', label: '🇭🇰 粤语-可爱女孩' },
+  { value: 'Cantonese_KindWoman', label: '🇭🇰 粤语-善良女声' },
+]
+
+const openCharModal = async (item?: any) => {
   editingChar.value = item || null
-  charForm.value = item ? { ...item } : { name: '', description: '', imageUrl: '', appearancePrompt: '', dialogueStyle: '', voiceId: '' }
+  charForm.value = item ? { ...item } : { name: '', description: '', imageUrl: '', appearancePrompt: '', dialogueStyle: '', voiceId: '', voiceProvider: '', previewAudioUrl: '' }
+  // 加载已保存的试听音频URL
+  previewAudioUrl.value = item?.previewAudioUrl || ''
+  // 加载 AI 配置中的 TTS 类型，获取可用模型和默认音色
+  await loadTTSConfigs()
   charModalOpen.value = true
+}
+
+// 加载 TTS 类型的 AI 配置
+const loadTTSConfigs = async () => {
+  try {
+    const res = await aiConfigApi.getEnabledByType('tts')
+    if (res.code === 200 && res.data) {
+      ttsConfigList.value = Array.isArray(res.data) ? res.data : []
+      // 从配置中提取模型名作为参考信息
+      if (ttsConfigList.value.length > 0) {
+        console.log('Loaded {} TTS config(s): model={}', ttsConfigList.value.length, ttsConfigList.value[0].model)
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load TTS configs:', e)
+  }
+  // 始终使用内置音色列表作为选项
+  ttsVoices.value = minimaxTTSVoices
+}
+
+// 试听音色
+const previewVoice = async () => {
+  if (!charForm.value.voiceId) { AMessage.warning('请先选择音色'); return }
+  previewingVoice.value = true
+  previewAudioUrl.value = ''
+  try {
+    const res = await ttsPreviewApi.preview({
+      text: `你好，我是${charForm.value.name || '该角色'}。这是一段试听文本，用于测试音色效果。`,
+      voiceId: charForm.value.voiceId,
+      characterId: editingChar.value?.id,
+    })
+    if (res.code === 200 && res.data?.audioData) {
+      previewAudioUrl.value = res.data.audioData
+      charForm.value.previewAudioUrl = res.data.audioData
+      AMessage.success('试听生成成功，已归档到存储')
+    } else {
+      AMessage.error(res.message || '试听生成失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '试听失败，请检查AI配置')
+  } finally {
+    previewingVoice.value = false
+  }
+}
+
+// 播放/停止试听音频
+const togglePreviewAudio = () => {
+  if (previewAudioRef.value && previewAudioUrl.value) {
+    if (previewAudioRef.value.paused) previewAudioRef.value.play()
+    else { previewAudioRef.value.pause(); previewAudioRef.value.currentTime = 0 }
+  }
 }
 
 const saveChar = async () => {
@@ -258,6 +396,8 @@ const deleteShot = async (id: string) => {
     await storyboardApi.delete(id)
     sbList.value = sbList.value.filter(s => s.id !== id)
     AMessage.success('已删除')
+    // 重新加载列表确保数据同步
+    await loadData()
   } catch (e: any) {
     AMessage.error(e?.message || '删除失败')
   }
@@ -599,7 +739,13 @@ const clearImageUrl = (target: 'char' | 'scene') => {
             分镜列表
             <span v-if="sbList.length" class="text-sm font-normal text-[#808080] ml-2">({{ sbList.length }}个镜头)</span>
           </h3>
-          <a-button v-if="sbList.length > 0" @click="router.push(`/workbench/${route.params.id}`)">进入工作台 →</a-button>
+          <div v-if="sbList.length > 0" class="flex gap-2">
+            <a-button @click="router.push(`/workbench/${route.params.id}`)">进入工作台 →</a-button>
+            <a-button class="!bg-[#1a1a1e] !border-[#2a2a3e] !text-[#a78bfa]" @click="router.push(`/media/${route.params.id}`)">
+              <template #icon><VideoCameraOutlined /></template>
+              媒体工作室
+            </a-button>
+          </div>
         </div>
 
         <div v-if="sbList.length === 0" class="text-center py-16 text-[#606060]">
@@ -625,7 +771,7 @@ const clearImageUrl = (target: 'char' | 'scene') => {
               <p v-if="shot.dialogue" class="text-[10px] xs:text-xs text-[#888] mt-1 italic line-clamp-1">「{{ shot.dialogue }}」</p>
             </div>
             <!-- 操作 -->
-            <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity">
+            <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity" @click.stop>
               <a-popconfirm title="确定删除该分镜？" ok-text="确定" cancel-text="取消" @confirm="deleteShot(shot.id)">
                 <a-button type="text" danger size="small"><template #icon><DeleteOutlined /></template></a-button>
               </a-popconfirm>
@@ -712,6 +858,54 @@ const clearImageUrl = (target: 'char' | 'scene') => {
           <div class="grid grid-cols-2 gap-3">
             <a-form-item label="外观提示词"><a-input v-model:value="charForm.appearancePrompt" placeholder="用于AI生成角色图" /></a-form-item>
             <a-form-item label="台词风格"><a-input v-model:value="charForm.dialogueStyle" placeholder="如：温柔/霸道/幽默" /></a-form-item>
+          </div>
+
+          <!-- ====== 音色选择 + 试听（BUG00023 关联AI配置） ====== -->
+          <div class="bg-[#12121a] rounded-lg p-3 sm:p-4 border border-[#2a2238] space-y-3">
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-xs text-[#a0a0a0] font-medium flex items-center gap-1.5">
+                <SoundOutlined style="color: #a78bfa;" />
+                专属音色
+              </label>
+              <a-button
+                type="primary"
+                size="small"
+                :loading="previewingVoice"
+                :disabled="!charForm.voiceId"
+                @click="previewVoice"
+                class="!rounded-lg !px-3 !text-xs"
+              >
+                {{ previewingVoice ? '生成中...' : '试听' }}
+              </a-button>
+            </div>
+
+            <!-- 音色下拉选择 -->
+            <a-select
+              v-model:value="charForm.voiceId"
+              placeholder="选择该角色的专属TTS音色"
+              size="large"
+              allowClear
+              showSearch
+              class="w-full"
+            >
+              <a-select-option
+                v-for="v in ttsVoices"
+                :key="v.value"
+                :value="v.value"
+              >{{ v.label }}<span class="text-[#555] ml-1">({{ v.value }})</span></a-select-option>
+            </a-select>
+
+            <!-- 试听播放器 -->
+            <div v-if="previewAudioUrl" class="flex items-center gap-2 bg-black/30 rounded-lg p-2">
+              <audio ref="previewAudioRef" :src="previewAudioUrl" class="hidden" />
+              <a-button type="text" size="small" @click="togglePreviewAudio" class="shrink-0 !p-1">
+                <template #icon><PlayCircleOutlined style="color: #34d399;" /></template>播放
+              </a-button>
+              <span class="text-[10px] text-[#666] truncate">试听音频已就绪，点击播放</span>
+            </div>
+            <p v-if="ttsConfigList.length > 0" class="text-[9px] text-[#444]">
+              💡 当前TTS模型: {{ ttsConfigList.map((c: any) => c.model).filter(Boolean).join(' / ') || 'speech-02-hd' }}
+            </p>
           </div>
 
           <!-- ====== 角色形象图（从存储选 + 上传） ====== -->

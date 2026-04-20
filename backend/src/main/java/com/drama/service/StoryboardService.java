@@ -346,4 +346,42 @@ public class StoryboardService extends ServiceImpl<StoryboardMapper, Storyboard>
         }
         return new ArrayList<>();
     }
+
+    /**
+     * 更新关联该角色的所有分镜记录的 characterImageUrl
+     */
+    @Transactional
+    public void updateCharacterImageUrl(String dramaId, String characterId, String imageUrl) {
+        LambdaQueryWrapper<Storyboard> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Storyboard::getDramaId, dramaId)
+               .eq(Storyboard::getCharacterId, characterId)
+               .eq(Storyboard::getDeleted, 0);
+
+        List<Storyboard> storyboards = this.list(wrapper);
+        for (Storyboard sb : storyboards) {
+            sb.setCharacterImageUrl(imageUrl);
+            sb.setUpdatedAt(LocalDateTime.now());
+            this.updateById(sb);
+        }
+        log.info("Updated {} storyboards with character image URL for character {}", storyboards.size(), characterId);
+    }
+
+    /**
+     * 更新关联该场景的所有分镜记录的 sceneImageUrl
+     */
+    @Transactional
+    public void updateSceneImageUrl(String dramaId, String sceneId, String imageUrl) {
+        LambdaQueryWrapper<Storyboard> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Storyboard::getDramaId, dramaId)
+               .eq(Storyboard::getSceneId, sceneId)
+               .eq(Storyboard::getDeleted, 0);
+
+        List<Storyboard> storyboards = this.list(wrapper);
+        for (Storyboard sb : storyboards) {
+            sb.setSceneImageUrl(imageUrl);
+            sb.setUpdatedAt(LocalDateTime.now());
+            this.updateById(sb);
+        }
+        log.info("Updated {} storyboards with scene image URL for scene {}", storyboards.size(), sceneId);
+    }
 }

@@ -30,8 +30,8 @@ public class AudioController {
     @PostMapping("/generate")
     public R<Audio> generate(@RequestParam String dramaId,
                              @RequestParam int episodeNumber,
-                             @RequestParam String storyboardId,
-                             @RequestParam String characterId,
+                             @RequestParam(required = false) String storyboardId,
+                             @RequestParam(required = false) String characterId,
                              @RequestParam String text,
                              @RequestParam(required = false) String provider,
                              @RequestParam(required = false) String voiceId,
@@ -85,6 +85,28 @@ public class AudioController {
     public R<Void> delete(@PathVariable String id) {
         audioService.delete(id);
         return R.ok();
+    }
+
+    /**
+     * TTS 预览（不保存到数据库，用于角色配置页面试听音色）
+     * 注意：路径用 /tts-preview 而非 /preview，避免被下面的 /{id} 路由吞掉
+     */
+    @PostMapping("/tts-preview")
+    public R<Map<String, Object>> preview(
+            @RequestParam String text,
+            @RequestParam(required = false) String voiceId,
+            @RequestParam(required = false) String model,
+            @RequestParam(required = false) String characterId) {
+        // 限制预览文本长度，防止滥用
+        if (text.length() > 200) {
+            text = text.substring(0, 200);
+        }
+        String audioResult = ttsService.preview(text, voiceId, model, characterId);
+        return R.ok(Map.of(
+                "audioData", audioResult,
+                "voiceId", voiceId != null ? voiceId : "default",
+                "text", text
+        ));
     }
 
     /**

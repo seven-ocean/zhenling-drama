@@ -6,16 +6,21 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.drama.common.BusinessException;
 import com.drama.common.IdUtils;
 import com.drama.common.ResultCode;
+import com.drama.entity.AiConfig;
+import com.drama.entity.Asset;
 import com.drama.entity.TaskLog;
 import com.drama.entity.Video;
 import com.drama.mapper.VideoMapper;
 import com.drama.service.adapter.AiAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -30,25 +35,65 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
 
     private final AiServiceFactory aiServiceFactory;
     private final TaskLogService taskLogService;
+    private final AiConfigService aiConfigService;
+    private final FileStorageService fileStorageService;
+    private final AssetService assetService;
+
+    // 用于下载视频URL
+    private final RestTemplate downloadRestTemplate = new RestTemplate();
 
     /**
-     * 生成视频并保存记录（自动注册任务日志）
+     * 生成视频并保存记录（支持多模式，自动注册任务日志）
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
      */
     @Transactional
     public Video generate(String dramaId, int episodeNumber, String storyboardId,
-                        String imageUrl, String provider, String model) {
-        if (imageUrl == null || imageUrl.isEmpty()) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "图片URL不能为空");
+                        String mode, String prompt,
+                        String imageUrl, String firstFrameUrl, String lastFrameUrl, String subjectImageUrl,
+                        String provider, String model) {
+        // 验证必填项
+        if ("TEXT_TO_VIDEO".equals(mode)) {
+            if (prompt == null || prompt.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "文生视频模式需要提供视频描述");
+            }
+        } else if ("IMAGE_TO_VIDEO".equals(mode)) {
+            if (imageUrl == null || imageUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "图生视频模式需要提供参考图片URL");
+            }
+        } else if ("FIRST_LAST_FRAME".equals(mode)) {
+            if (firstFrameUrl == null || firstFrameUrl.isEmpty() || lastFrameUrl == null || lastFrameUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "首尾帧模式需要提供首帧和尾帧图片URL");
+            }
+        } else if ("SUBJECT_REFERENCE".equals(mode)) {
+            if (subjectImageUrl == null || subjectImageUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "主体参考模式需要提供主体参考图片URL");
+            }
         }
 
+        // ====== 自动解析 provider/model，优先使用传入参数否则从 AiConfig 动态获取 ======
         String actualProvider = provider != null ? provider : "minimax";
-        String actualModel = model != null ? model : "video-01";
+        String actualModel = model;
+        if (actualModel == null || actualModel.isEmpty()) {
+            try {
+                List<AiConfig> videoConfigs = aiConfigService.listByType("video");
+                if (!videoConfigs.isEmpty() && videoConfigs.get(0).getModel() != null && !videoConfigs.get(0).getModel().isEmpty()) {
+                    actualModel = videoConfigs.get(0).getModel();
+                    log.info("Resolved video model from AiConfig: model={}", actualModel);
+                } else {
+                    actualModel = "MiniMax-Hailuo-2.3";
+                }
+            } catch (Exception e) {
+                log.warn("Failed to resolve video model from AiConfig, using default: {}", e.getMessage());
+                actualModel = "MiniMax-Hailuo-2.3";
+            }
+        }
 
-        log.info("Generating video: provider={}, model={}", actualProvider, actualModel);
+        log.info("Generating video: mode={}, provider={}, model={}", mode, actualProvider, actualModel);
 
         try {
-            // 调用AI生成视频
-            String videoResult = aiServiceFactory.generateVideo(actualProvider, imageUrl, actualModel);
+            // 调用AI生成视频（使用多模式接口）
+            String videoResult = aiServiceFactory.generateVideoMultiMode(
+                    actualProvider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, actualModel);
 
             Video video = new Video();
             video.setId(IdUtils.randomId());
@@ -68,8 +113,9 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
                 taskLogService.create(dramaId, "video_generate", vendorTaskId);
                 log.info("Video generation started as async task: {}", vendorTaskId);
             } else if (videoResult != null && !videoResult.isEmpty()) {
-                // 同步返回了视频URL
-                video.setVideoUrl(videoResult);
+                // 同步返回了视频URL → 归档到OSS
+                String archivedUrl = archiveVideoToStorage(videoResult, dramaId);
+                video.setVideoUrl(archivedUrl);
                 video.setStatus("completed");
             } else {
                 // 返回空
@@ -123,13 +169,15 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
 
                 if (pollResult.startsWith("completed:")) {
                     String videoUrl = pollResult.substring(10);
-                    video.setVideoUrl(videoUrl);
+                    // 归档视频到OSS（避免临时链接过期）
+                    String archivedUrl = archiveVideoToStorage(videoUrl, video.getDramaId());
+                    video.setVideoUrl(archivedUrl);
                     video.setStatus("completed");
                     video.setUpdatedAt(LocalDateTime.now());
                     this.updateById(video);
 
-                    taskLogService.complete(taskLog.getId(), videoUrl);
-                    log.info("Video task completed: {} -> {}", taskLog.getTaskId(), videoUrl);
+                    taskLogService.complete(taskLog.getId(), archivedUrl);
+                    log.info("Video task completed & archived: {} -> {}", taskLog.getTaskId(), archivedUrl);
 
                 } else if (pollResult.startsWith("failed:")) {
                     String errorMsg = pollResult.substring(7);
@@ -265,5 +313,57 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
 
         video.setUpdatedAt(LocalDateTime.now());
         this.updateById(video);
+    }
+
+    /**
+     * 归档视频到OSS/本地存储
+     * 下载AI返回的临时视频URL → 通过FileStorageService上传到用户配置的存储位置
+     *
+     * @param tempUrl  AI返回的临时视频URL
+     * @param dramaId  剧集ID（用于OSS路径组织）
+     * @return 归档后的永久URL
+     */
+    private String archiveVideoToStorage(String tempUrl, String dramaId) {
+        // 如果已经是本地/OSS路径（不以http开头），直接返回
+        if (!tempUrl.startsWith("http://") && !tempUrl.startsWith("https://")) {
+            log.info("[VideoArchive] URL is already local/storage path: {}", tempUrl);
+            return tempUrl;
+        }
+
+        try {
+            log.info("[VideoArchive] Downloading video from: {}", tempUrl);
+
+            // 使用 URI 处理带签名的 URL，避免 RestTemplate 二次编码导致签名不匹配
+            URI uri = URI.create(tempUrl);
+            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(uri, byte[].class);
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.warn("[VideoArchive] Failed to download, status={}, returning original URL",
+                        response.getStatusCode());
+                return tempUrl;
+            }
+
+            byte[] videoData = response.getBody();
+            log.info("[VideoArchive] Downloaded {} bytes from {}", videoData.length, tempUrl);
+
+            // 通过 FileStorageService 上传到配置的存储位置（自动处理 OSS 或本地）
+            String filename = "video_" + System.currentTimeMillis() + ".mp4";
+            Asset archivedAsset = fileStorageService.uploadBytes(
+                    videoData, filename, dramaId, "video", "video/mp4");
+
+            // 补充元数据
+            archivedAsset.setSourceType("ai_archived");
+            archivedAsset.setExtraData("{\"type\":\"video\",\"sourceUrl\":\"" + tempUrl + "\"}");
+            assetService.updateById(archivedAsset);
+
+            log.info("[VideoArchive] Video archived: id={}, url={}, size={}KB",
+                    archivedAsset.getId(), archivedAsset.getFileUrl(), videoData.length / 1024);
+
+            return archivedAsset.getFileUrl();
+
+        } catch (Exception e) {
+            log.error("[VideoArchive] Failed to archive video, returning original URL: {}", e.getMessage());
+            return tempUrl; // 降级：返回原始URL
+        }
     }
 }

@@ -3,12 +3,14 @@ package com.drama.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.drama.common.R;
 import com.drama.common.ResultCode;
+import com.drama.dto.VideoGenerateRequest;
 import com.drama.entity.Video;
 import com.drama.service.VideoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 
@@ -24,16 +26,34 @@ public class VideoController {
     private final VideoService videoService;
 
     /**
-     * 生成视频
+     * 生成视频（支持多模式）
+     * 接收 JSON Body，统一前后端传参方式
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
      */
     @PostMapping("/generate")
-    public R<Video> generate(@RequestParam String dramaId,
-                              @RequestParam int episodeNumber,
-                              @RequestParam String storyboardId,
-                              @RequestParam String imageUrl,
-                              @RequestParam(required = false) String provider,
-                              @RequestParam(required = false) String model) {
-        return R.ok(videoService.generate(dramaId, episodeNumber, storyboardId, imageUrl, provider, model));
+    public R<Video> generate(@Valid @RequestBody VideoGenerateRequest request) {
+        // 参数校验：dramaId 和 episodeNumber 必填
+        if (request.getDramaId() == null || request.getDramaId().isBlank()) {
+            throw new com.drama.common.BusinessException(ResultCode.BAD_REQUEST, "dramaId 不能为空");
+        }
+        if (request.getEpisodeNumber() == null || request.getEpisodeNumber() <= 0) {
+            throw new com.drama.common.BusinessException(ResultCode.BAD_REQUEST, "episodeNumber 必须大于 0");
+        }
+        // 默认值兜底
+        String mode = request.getMode() != null ? request.getMode() : "IMAGE_TO_VIDEO";
+        return R.ok(videoService.generate(
+                request.getDramaId(),
+                request.getEpisodeNumber(),
+                request.getStoryboardId(),
+                mode,
+                request.getPrompt(),
+                request.getImageUrl(),
+                request.getFirstFrameUrl(),
+                request.getLastFrameUrl(),
+                request.getSubjectImageUrl(),
+                request.getProvider(),
+                request.getModel()
+        ));
     }
 
     /**
