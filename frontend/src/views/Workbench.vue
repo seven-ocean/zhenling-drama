@@ -378,6 +378,9 @@ const statusLabelMap: Record<string, string> = {
 }
 
 onMounted(() => {
+  // 安全防护：防止组件重复挂载导致多个并行定时器
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+
   loadStoryboards()
   loadCharacters()
   loadScenes()

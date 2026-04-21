@@ -15,10 +15,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 视频合成接口
@@ -32,6 +35,11 @@ public class ComposeController {
 
     private final VideoComposeService videoComposeService;
     private final ComposeService composeService;
+
+    /** 允许的文件扩展名白名单（防止传入非法文件类型被处理后执行） */
+    private static final Pattern SAFE_PATH_PATTERN = Pattern.compile(
+            "^[a-zA-Z0-9._\\-/\\\\:]+$"
+    );
 
     /**
      * 检查 FFmpeg 是否可用
@@ -53,6 +61,20 @@ public class ComposeController {
             @RequestParam String videoPath,
             @RequestParam(required = false) String audioPath,
             @RequestParam(required = false) String subtitle) {
+
+        // 输入校验
+        if (videoPath == null || videoPath.isBlank()) {
+            return R.fail(400, "视频路径不能为空");
+        }
+        if (videoPath.length() > 2048) {
+            return R.fail(400, "视频路径过长");
+        }
+        // 校验路径只包含安全字符（防止命令注入）
+        if (!SAFE_PATH_PATTERN.matcher(videoPath).matches() ||
+                (audioPath != null && !audioPath.isBlank() && !SAFE_PATH_PATTERN.matcher(audioPath).matches())) {
+            return R.fail(400, "路径包含非法字符");
+        }
+
         log.info("Compose shot: video={}, audio={}, hasSubtitle={}", videoPath, audioPath, subtitle != null);
         try {
             String outputPath = composeService.composeShot(videoPath, audioPath, subtitle).toString();

@@ -15,14 +15,13 @@
 - Git规范: feat/fix/docs/refactor 前缀
 - 核心铁律: 不反问、不质疑、不拖延、不废话；永远输出完整可运行代码
 
-## 项目状态 (2026-04-16)
-- 7批移植完成，骨架代码全部完善
-- AI适配器: OpenAiAdapter(完整) / MiniMaxAdapter(完整含轮询)
-- TaskLog 实体+Mapper+Service 已创建
-- TtsService 音频已持久化到文件系统
-- VideoService 支持异步任务轮询(pollPendingTasks)
-- AssetService 图片尺寸获取已实现(ImageIO)
-- VideoComposeService getVideoInfo() ffprobe解析已完成
+## 项目状态 (2026-04-21)
+- **UPDATE.md 代码审查完成**: 33项优化任务（5 P0安全 + 8 P1功能 + 9 P2性能UX + 11 P3代码质量）
+- **已修复 14/33 项**: 第一批10项(SEC/PERF/FUNC) + BUG00030错误透传 + 第三批4项(P2配置/质量)
+- **FFmpeg路径策略更新**: application.yml 留空走系统PATH，Windows路径移到 application-dev.yml
+- **静态资源安全**: 新增 PathTraversalProtectionFilter 防路径遍历攻击
+- **前端日志清理**: 9处 console.log 全部改为 `import.meta.env.DEV` 条件限定
+- **定时器加固**: MediaStudio/Workbench onMounted 加防重复挂载保护
 - JWT 依赖已引入但未使用（无认证过滤器）
 - **前端UI框架**: 已切换到 **Ant Design Vue 4.x**（全局注册，暗色主题通过 ConfigProvider 配置）
   - App.vue 使用 a-config-provider + a-app + 全局按钮icon对齐CSS

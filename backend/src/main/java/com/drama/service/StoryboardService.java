@@ -8,6 +8,7 @@ import com.drama.common.ResultCode;
 import com.drama.entity.Character;
 import com.drama.entity.Scene;
 import com.drama.entity.Storyboard;
+import com.drama.service.adapter.AiApiException;
 import com.drama.mapper.StoryboardMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;

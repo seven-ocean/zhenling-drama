@@ -39,11 +39,74 @@ public class MiniMaxAdapter implements AiAdapter {
     private static final String DEFAULT_VIDEO_MODEL = "MiniMax-Hailuo-2.3";
     private static final String DEFAULT_TTS_MODEL = "speech-02-hd";
 
-    private AiConfig config;
+    /** 使用 volatile 保证多线程可见性（initConfig 可能被运行时重新调用） */
+    private volatile AiConfig config;
 
     /** 注入由 RestTemplateConfig 创建的 Bean（支持代理） */
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // ========== MiniMax API 错误码常量 ==========
+
+    /** 余额不足 */
+    private static final int ERR_INSUFFICIENT_BALANCE = 1008;
+    /** 参数错误 */
+    private static final int ERR_INVALID_PARAM = 1004;
+    /** API Key 无效 */
+    private static final int ERR_UNAUTHORIZED = 1001;
+    /** 频率限制 */
+    private static final int ERR_RATE_LIMIT = 1013;
+    /** 内容安全审核不通过 */
+    private static final int ERR_CONTENT_SAFE = 1014;
+
+    /**
+     * 解析 MiniMax base_resp 并抛出有意义的异常（替代旧的静默返回空串）
+     *
+     * MiniMax 标准响应结构: { "base_resp": { "status_code": 0, "status_msg": "success" }, ... }
+     * 当 status_code != 0 时，根据错误码给出中文提示
+     *
+     * @param root       API 响应 JSON 根节点
+     * @param operation  操作名称（用于日志和异常消息）
+     * @throws AiApiException 当 API 返回业务错误时
+     */
+    private void ensureSuccess(JsonNode root, String operation) throws AiApiException {
+        JsonNode baseResp = root.path("base_resp");
+        int code = baseResp.path("status_code").asInt(-1);
+
+        if (code == 0) return; // 成功
+
+        String msg = baseResp.path("status_msg").asText("未知错误");
+
+        // 根据 MiniMax 错误码翻译为用户可理解的中文消息
+        String userMessage = translateErrorCode(code, msg, operation);
+
+        log.error("[MiniMax] {} API 失败: code={}, msg={}, 原文={}", operation, code, msg, userMessage);
+        throw new AiApiException(code, msg, userMessage, operation);
+    }
+
+    /**
+     * 将 MiniMax 错误码翻译为用户友好的中文提示
+     */
+    private String translateErrorCode(int code, String originalMsg, String operation) {
+        switch (code) {
+            case ERR_INSUFFICIENT_BALANCE:
+                return "MiniMax 账户余额不足（错误码:" + code + "），请在 MiniMax 开放平台充值后再试。"
+                        + "操作类型: " + operation;
+            case ERR_INVALID_PARAM:
+                return "MiniMax 参数校验失败（错误码:" + code + "）：" + originalMsg
+                        + "。操作类型: " + operation + "，请检查请求参数是否正确";
+            case ERR_UNAUTHORIZED:
+                return "MiniMax API Key 无效或已过期（错误码:" + code + "），请在 AI 配置页面更新正确的 API Key";
+            case ERR_RATE_LIMIT:
+                return "MiniMax 请求频率超限（错误码:" + code + "），请稍后重试";
+            case ERR_CONTENT_SAFE:
+                return "MiniMax 内容安全审核未通过（错误码:" + code + "）：" + originalMsg
+                        + "。请调整提示词内容后重试";
+            default:
+                return "MiniMax API 调用失败（错误码:" + code + "）：" + originalMsg
+                        + "。操作类型: " + operation;
+        }
+    }
 
     @Override
     public String getProvider() {
@@ -94,7 +157,7 @@ public class MiniMaxAdapter implements AiAdapter {
     public String generateText(String prompt, String model) {
         if (!isConfigured()) {
             log.warn("MiniMax not configured for text generation");
-            return "";
+            throw new AiApiException(-1, "", "MiniMax 文本生成适配器未配置，请在 AI 配置页面添加 text 类型的配置", "文本生成");
         }
         try {
             // OpenAI 兼容接口：POST /v1/chat/completions
@@ -116,6 +179,12 @@ public class MiniMaxAdapter implements AiAdapter {
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
+
+                // 检查是否有 MiniMax 错误响应（OpenAI兼容接口可能走 base_resp）
+                if (root.has("base_resp") && root.path("base_resp").path("status_code").asInt(0) != 0) {
+                    ensureSuccess(root, "文本生成");
+                }
+
                 // OpenAI 兼容格式：choices[0].message.content
                 JsonNode choices = root.path("choices");
                 if (choices.isArray() && choices.size() > 0) {
@@ -123,12 +192,26 @@ public class MiniMaxAdapter implements AiAdapter {
                     if (!text.isEmpty()) return text;
                 }
                 // 兜底：尝试直接取 content 字段
-                return root.path("content").asText("");
+                String fallback = root.path("content").asText("");
+                if (!fallback.isEmpty()) return fallback;
+
+                // 真的什么都没有
+                log.warn("[MiniMax] Text generation returned empty body: {}", response.getBody());
+                throw new AiApiException(-1, "", "MiniMax 文本生成返回为空内容，请检查模型是否正确或稍后重试", "文本生成");
+            } else {
+                // HTTP 层面的错误（非 2xx）
+                int httpStatus = response.getStatusCodeValue();
+                String body = response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "";
+                throw new AiApiException(httpStatus, body,
+                        "MiniMax 文本生成请求失败（HTTP " + httpStatus + "），请检查网络或服务状态", "文本生成");
             }
+        } catch (AiApiException e) {
+            throw e; // 直接透传我们的自定义异常
         } catch (Exception e) {
             log.error("[MiniMax] Text generation error: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax 文本生成异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "文本生成");
         }
-        return "";
     }
 
     // ========== 图片生成 ==========
@@ -137,7 +220,7 @@ public class MiniMaxAdapter implements AiAdapter {
     public String generateImage(String prompt, String model) {
         if (!isConfigured()) {
             log.warn("[MiniMax] Image generation skipped: adapter not configured");
-            return "";
+            throw new AiApiException(-1, "", "MiniMax 图片生成适配器未配置，请在 AI 配置页面添加 image 类型的配置", "图片生成");
         }
 
         try {
@@ -169,11 +252,8 @@ public class MiniMaxAdapter implements AiAdapter {
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
 
-                if (!isSuccess(root)) {
-                    String errorMsg = root.path("base_resp").path("status_msg").asText("unknown");
-                    log.warn("[MiniMax] Image gen failed: {}, full response: {}", errorMsg, response.getBody());
-                    return "";
-                }
+                // 使用 ensureSuccess 统一错误检查（替代旧的 isSuccess + 静默返回空）
+                ensureSuccess(root, "图片生成");
 
                 // 官方返回格式：{ "data": { "image_urls": ["url1", ...] }, "base_resp": {...} }
                 JsonNode data = root.path("data");
@@ -184,21 +264,29 @@ public class MiniMaxAdapter implements AiAdapter {
                     return imageUrl;
                 } else {
                     log.warn("[MiniMax] Image gen response has no image_urls, data: {}", data);
+                    throw new AiApiException(-1, "",
+                            "MiniMax 图片生成返回数据中无 image_urls，可能是模型或参数问题", "图片生成");
                 }
             } else {
-                log.warn("[MiniMax] Image gen http failed: status={}, body={}", response.getStatusCode(), response.getBody());
+                int httpStatus = response.getStatusCodeValue();
+                throw new AiApiException(httpStatus,
+                        response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "",
+                        "MiniMax 图片生成请求失败（HTTP " + httpStatus + "）", "图片生成");
             }
+        } catch (AiApiException e) {
+            throw e;
         } catch (Exception e) {
             log.error("[MiniMax] Image generation error: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax 图片生成异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "图片生成");
         }
-        return "";
     }
 
     // ========== 视频生成（异步任务） ==========
 
     @Override
     public String generateVideo(String imageUrl, String model) {
-        if (!isConfigured()) return "";
+        if (!isConfigured()) throw new AiApiException(-1, "", "MiniMax 视频生成适配器未配置", "视频生成");
 
         try {
             // POST /v1/video_generation（文生视频/图生视频共用）
@@ -233,28 +321,38 @@ public class MiniMaxAdapter implements AiAdapter {
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
 
-                if (isSuccess(root)) {
-                    // 返回 task_id 用于后续轮询
-                    String taskId = root.path("task_id").asText("");
-                    if (!taskId.isEmpty()) {
-                        return "task:" + taskId;
-                    }
-                } else {
-                    log.warn("[MiniMax] Video creation failed: {}",
-                            root.path("base_resp").path("status_msg").asText(""));
+                // 使用 ensureSuccess 统一错误检查——这里会捕获 insufficient balance 等！
+                ensureSuccess(root, "视频生成");
+
+                // 返回 task_id 用于后续轮询
+                String taskId = root.path("task_id").asText("");
+                if (!taskId.isEmpty()) {
+                    return "task:" + taskId;
                 }
+                log.warn("[MiniMax] Video success but no task_id: {}", response.getBody());
+                throw new AiApiException(-1, "",
+                        "MiniMax 视频任务创建成功但未返回 task_id", "视频生成");
+            } else {
+                int httpStatus = response.getStatusCodeValue();
+                throw new AiApiException(httpStatus,
+                        response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "",
+                        "MiniMax 视频生成请求失败（HTTP " + httpStatus + "）", "视频生成");
             }
+        } catch (AiApiException e) {
+            throw e;
         } catch (Exception e) {
             log.error("[MiniMax] Video generation error: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax 视频生成异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "视频生成");
         }
-        return "";
     }
 
     // ========== TTS 语音合成 ==========
 
     @Override
     public String generateTTS(String text, String voiceId, String model) {
-        if (!isConfigured()) return "";
+        if (!isConfigured())
+            throw new AiApiException(-1, "", "MiniMax TTS 适配器未配置，请在 AI 配置页面添加 tts 类型的配置", "语音合成(TTS)");
 
         try {
             // POST /v1/t2a_v2
@@ -285,27 +383,34 @@ public class MiniMaxAdapter implements AiAdapter {
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
 
-                if (isSuccess(root)) {
-                    // 官方返回格式：{ "data": { "audio": "<hex或url>", "status": 2 }, ... }
-                    // output_format=url 时 audio 字段直接是下载链接（24小时有效）
-                    // output_format=hex 时 audio 是十六进制编码的音频数据
-                    String audioData = root.path("data").path("audio").asText("");
+                // 统一错误检查
+                ensureSuccess(root, "语音合成(TTS)");
 
-                    if (!audioData.isEmpty()) {
-                        if (audioData.startsWith("http")) {
-                            // 直接返回音频下载URL
-                            return audioData;
-                        } else {
-                            // Hex 编码数据 → 转为 base64 给前端使用
-                            return "audio:mp3:hex," + audioData;
-                        }
+                // 官方返回格式：{ "data": { "audio": "<hex或url>", "status": 2 }, ... }
+                String audioData = root.path("data").path("audio").asText("");
+
+                if (!audioData.isEmpty()) {
+                    if (audioData.startsWith("http")) {
+                        return audioData;
+                    } else {
+                        return "audio:mp3:hex," + audioData;
                     }
                 }
+                log.warn("[MiniMax] TTS returned empty audio data: {}", response.getBody());
+                throw new AiApiException(-1, "", "MiniMax TTS 返回数据为空，可能是模型或文本问题", "语音合成(TTS)");
+            } else {
+                int httpStatus = response.getStatusCodeValue();
+                throw new AiApiException(httpStatus,
+                        response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "",
+                        "MiniMax TTS 请求失败（HTTP " + httpStatus + "）", "语音合成(TTS)");
             }
+        } catch (AiApiException e) {
+            throw e;
         } catch (Exception e) {
             log.error("[MiniMax] TTS error: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax TTS 异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "语音合成(TTS)");
         }
-        return "";
     }
 
     // ========== 健康检查 ==========
@@ -504,7 +609,7 @@ public class MiniMaxAdapter implements AiAdapter {
             String lastFrameUrl,
             String subjectImageUrl,
             String model) {
-        if (!isConfigured()) return "";
+        if (!isConfigured()) throw new AiApiException(-1, "", "MiniMax 视频生成适配器未配置", "视频生成(多模式)");
 
         try {
             String url = getBaseUrl() + "/video_generation";
@@ -533,8 +638,6 @@ public class MiniMaxAdapter implements AiAdapter {
             // 根据模式添加不同参数（⚠️ 参数名必须与官方文档完全一致）
             switch (mode) {
                 case "IMAGE_TO_VIDEO": {
-                    // 🔧 【修复】参数名: reference_image_url → first_frame_image（官方规范）
-                    // 图生视频 = 起始帧驱动模式，用 first_frame_image 字段
                     String imageUrl = (referenceImageUrl != null && !referenceImageUrl.isEmpty())
                             ? referenceImageUrl : firstFrameUrl;
                     if (imageUrl != null && !imageUrl.isEmpty()) {
@@ -549,17 +652,14 @@ public class MiniMaxAdapter implements AiAdapter {
                 case "FIRST_LAST_FRAME": {
                     if (firstFrameUrl != null && !firstFrameUrl.isEmpty()
                             && lastFrameUrl != null && !lastFrameUrl.isEmpty()) {
-                        // ✅ 正确参数名
                         requestBody.put("first_frame_image", firstFrameUrl);
                         requestBody.put("last_frame_image", lastFrameUrl);
                         log.info("[MiniMax] First-Last-Frame mode: model={} (Hailuo-02 recommended), frames provided",
                                 useModel);
                     } else if (firstFrameUrl != null && !firstFrameUrl.isEmpty()) {
-                        // 只有首帧 → 降级为图生视频
                         requestBody.put("first_frame_image", firstFrameUrl);
                         log.info("[MiniMax] FIRST_LAST_FRAME missing last_frame, degrading to Image-to-Video");
                     } else if (lastFrameUrl != null && !lastFrameUrl.isEmpty()) {
-                        // 只有尾帧 → 用尾帧当首帧
                         requestBody.put("first_frame_image", lastFrameUrl);
                         log.info("[MiniMax] FIRST_LAST_FRAME missing first_frame, using last_frame as start");
                     } else {
@@ -570,12 +670,10 @@ public class MiniMaxAdapter implements AiAdapter {
 
                 case "SUBJECT_REFERENCE": {
                     if (subjectImageUrl != null && !subjectImageUrl.isEmpty()) {
-                        // 🔧 【修复】官方要求的结构: subject_reference 是数组对象，不是字符串！
                         java.util.Map<String, Object> charRef = new java.util.HashMap<>();
                         charRef.put("type", "character");
                         charRef.put("image", java.util.Arrays.asList(subjectImageUrl));
                         requestBody.put("subject_reference", java.util.Arrays.asList(charRef));
-
                         log.info("[MiniMax] Subject-Reference mode: model={} (S2V-01 recommended), image provided",
                                 useModel);
                     } else {
@@ -602,29 +700,32 @@ public class MiniMaxAdapter implements AiAdapter {
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 JsonNode root = objectMapper.readTree(response.getBody());
 
-                if (isSuccess(root)) {
-                    String taskId = root.path("task_id").asText("");
-                    if (!taskId.isEmpty()) {
-                        log.info("[MiniMax] Video task created: taskId={}", taskId);
-                        return "task:" + taskId;
-                    } else {
-                        log.warn("[MiniMax] Success response but no task_id! Body: {}", response.getBody());
-                    }
+                // ✅ 核心：使用 ensureSuccess 统一检查错误码
+                // 这里会捕获 code=1008 insufficient balance 并抛出有意义的异常！
+                ensureSuccess(root, "视频生成(多模式/" + mode + ")");
+
+                String taskId = root.path("task_id").asText("");
+                if (!taskId.isEmpty()) {
+                    log.info("[MiniMax] Video task created: taskId={}", taskId);
+                    return "task:" + taskId;
                 } else {
-                    int code = root.path("base_resp").path("status_code").asInt(-1);
-                    String msg = root.path("base_resp").path("status_msg").asText("unknown");
-                    log.error("[MiniMax] Video creation API error: code={}, msg={}, body={}",
-                            code, msg, response.getBody());
+                    log.warn("[MiniMax] Success response but no task_id! Body: {}", response.getBody());
+                    throw new AiApiException(-1, "",
+                            "MiniMax 视频任务创建成功但未返回 task_id，请稍后重试", "视频生成(多模式)");
                 }
             } else {
-                log.warn("[MiniMax] Video creation HTTP error: status={}, body={}",
-                        response.getStatusCode(),
-                        response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "null");
+                int httpStatus = response.getStatusCodeValue();
+                throw new AiApiException(httpStatus,
+                        response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "",
+                        "MiniMax 视频生成请求失败（HTTP " + httpStatus + "）", "视频生成(多模式)");
             }
+        } catch (AiApiException e) {
+            throw e; // 直接透传
         } catch (Exception e) {
             log.error("[MiniMax] Video generation exception: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax 视频生成异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "视频生成(多模式)");
         }
-        return "";
     }
 
 }

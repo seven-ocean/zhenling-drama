@@ -12,6 +12,7 @@ import com.drama.entity.TaskLog;
 import com.drama.entity.Video;
 import com.drama.mapper.VideoMapper;
 import com.drama.service.adapter.AiAdapter;
+import com.drama.service.adapter.AiApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -39,8 +40,8 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
     private final FileStorageService fileStorageService;
     private final AssetService assetService;
 
-    // 用于下载视频URL
-    private final RestTemplate downloadRestTemplate = new RestTemplate();
+    /** 注入由 RestTemplateConfig 创建的 Bean（支持代理/DNS/超时配置） */
+    private final RestTemplate restTemplate;
 
     /**
      * 生成视频并保存记录（支持多模式，自动注册任务日志）
@@ -118,7 +119,7 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
                 video.setVideoUrl(archivedUrl);
                 video.setStatus("completed");
             } else {
-                // 返回空
+                // 返回空（理论上不会走到这里了，因为 adapter 现在会抛异常）
                 video.setStatus("failed");
                 video.setErrorMessage("视频生成返回为空");
             }
@@ -132,9 +133,40 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
             return video;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            // AI厂商返回的具体错误（如余额不足、参数错误等），直接透传给用户
+            log.error("AI API error in video generation: [code={}] {} - {}",
+                    e.getVendorCode(), e.getVendorMessage(), e.getMessage());
+            // 保存一条 failed 记录以便前端展示
+            saveFailedVideo(dramaId, episodeNumber, storyboardId, actualProvider, actualModel,
+                    "[" + e.getOperation() + "] " + e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("Video generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "视频生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 保存视频生成失败的记录（用于在前端列表中显示错误原因）
+     */
+    private void saveFailedVideo(String dramaId, int episodeNumber, String storyboardId,
+                                  String provider, String model, String errorMessage) {
+        try {
+            Video video = new Video();
+            video.setId(IdUtils.randomId());
+            video.setDramaId(dramaId);
+            video.setEpisodeNumber(episodeNumber);
+            video.setStoryboardId(storyboardId);
+            video.setProvider(provider);
+            video.setModel(model);
+            video.setStatus("failed");
+            video.setErrorMessage(errorMessage);
+            video.setCreatedAt(LocalDateTime.now());
+            video.setDeleted(0);
+            this.save(video);
+        } catch (Exception ex) {
+            log.warn("Failed to save failed-video record: {}", ex.getMessage());
         }
     }
 
@@ -335,7 +367,7 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
 
             // 使用 URI 处理带签名的 URL，避免 RestTemplate 二次编码导致签名不匹配
             URI uri = URI.create(tempUrl);
-            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(uri, byte[].class);
+            ResponseEntity<byte[]> response = restTemplate.getForEntity(uri, byte[].class);
 
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 log.warn("[VideoArchive] Failed to download, status={}, returning original URL",

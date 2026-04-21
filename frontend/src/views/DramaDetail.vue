@@ -218,7 +218,7 @@ const loadTTSConfigs = async () => {
     if (res.code === 200 && res.data) {
       ttsConfigList.value = Array.isArray(res.data) ? res.data : []
       // 从配置中提取模型名作为参考信息
-      if (ttsConfigList.value.length > 0) {
+      if (ttsConfigList.value.length > 0 && import.meta.env.DEV) {
         console.log('Loaded {} TTS config(s): model={}', ttsConfigList.value.length, ttsConfigList.value[0].model)
       }
     }

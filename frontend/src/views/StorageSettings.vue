@@ -157,17 +157,14 @@ const loadStatus = async () => {
 const loadFiles = async () => {
   loadingFiles.value = true
   try {
-    console.log('Loading files...')
     // 添加时间戳避免缓存
-    const res = await assetApi.page({ 
-      pageNum: pageNum.value, 
+    const res = await assetApi.page({
+      pageNum: pageNum.value,
       pageSize: pageSize.value,
-      _t: Date.now() 
+      _t: Date.now()
     })
-    console.log('Load files response:', res)
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
-      console.log('Files loaded:', list.length, 'items')
       files.value = list
       fileTotal.value = res.data?.total || list.length
     }
@@ -226,16 +223,13 @@ const uploadFiles = async (event: Event) => {
 // 删除文件
 const deleteFile = async (id: string) => {
   try {
-    console.log('Deleting file:', id)
     const res = await storageApi.delete(id)
-    console.log('Delete response:', res)
-    
+
     // 立即从本地列表中移除该项（乐观更新）
     const index = files.value.findIndex((f: any) => f.id === id)
     if (index > -1) {
       files.value.splice(index, 1)
       fileTotal.value = Math.max(0, fileTotal.value - 1)
-      console.log('Removed file from local list:', id)
     }
     
     AMessage.success('已删除')

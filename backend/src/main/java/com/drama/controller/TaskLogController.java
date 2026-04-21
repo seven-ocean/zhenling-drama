@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -81,11 +82,14 @@ public class TaskLogController {
 
     /**
      * 清理已完成/失败的任务记录
+     * 逻辑删除 N 天前（默认30天）状态为 completed 或 failed 的任务
      */
     @PostMapping("/cleanup")
     public R<Void> cleanup(@RequestParam(defaultValue = "30") int daysBefore) {
-        // TODO: 清理 N 天前的已完成或失败任务
-        log.info("Cleanup task logs older than {} days", daysBefore);
+        if (daysBefore < 1) daysBefore = 1; // 至少保留1天
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(daysBefore);
+        int deleted = taskLogService.cleanupOlderThan(cutoff);
+        log.info("Cleanup task logs: deleted {} records older than {} days", deleted, daysBefore);
         return R.ok();
     }
 }

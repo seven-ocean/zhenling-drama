@@ -46,7 +46,7 @@ public class StoryboardController {
         // 获取分镜、角色、场景信息
         Storyboard sb = null;
         if (storyboardId != null) {
-            try { sb = storyboardService.getById(storyboardId); } catch (Exception ignored) {}
+            try { sb = storyboardService.getById(storyboardId); } catch (Exception e) { log.warn("Failed to load storyboard {}: {}", storyboardId, e.getMessage()); }
         }
         
         // TODO: 根据ID加载角色和场景实体，当前简化处理

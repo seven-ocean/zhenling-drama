@@ -3,6 +3,15 @@
   "sessions": {
     "beffb873b4084ad7bfc719e69ffd388c": [
       {
+        "expertId": "UserExperienceArchitect",
+        "name": "体验达",
+        "profession": "用户体验架构师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/01-Design/UserExperienceArchitect/UserExperienceArchitect.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/01-Design/UserExperienceArchitect/UserExperienceArchitect_zh.md",
+        "usedAt": 1776744750384,
+        "industryId": "01-Design"
+      },
+      {
         "expertId": "SeniorDeveloper",
         "name": "Will",
         "profession": "高级开发工程师",
@@ -10,15 +19,6 @@
         "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
         "usedAt": 1776672666051,
         "industryId": "all"
-      },
-      {
-        "expertId": "UserExperienceArchitect",
-        "name": "体验达",
-        "profession": "用户体验架构师",
-        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/01-Design/UserExperienceArchitect/UserExperienceArchitect.png",
-        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/01-Design/UserExperienceArchitect/UserExperienceArchitect_zh.md",
-        "usedAt": 1776667425254,
-        "industryId": "01-Design"
       },
       {
         "expertId": "NarrativeDesigner",
@@ -29,7 +29,27 @@
         "usedAt": 1776346757395,
         "industryId": "04-PaidMedia"
       }
+    ],
+    "3f6e9773d0764f9aa2b9db5dca3f51b3": [
+      {
+        "expertId": "SeniorDeveloper",
+        "name": "吴八哥",
+        "profession": "高级开发工程师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/02-Engineering/SeniorDeveloper/SeniorDeveloper.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/02-Engineering/SeniorDeveloper/SeniorDeveloper_zh.md",
+        "usedAt": 1776759638671,
+        "industryId": "all"
+      },
+      {
+        "expertId": "UserExperienceArchitect",
+        "name": "体验达",
+        "profession": "用户体验架构师",
+        "avatarUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/avatars/01-Design/UserExperienceArchitect/UserExperienceArchitect.png",
+        "promptUrl": "https://acc-1258344699.cos.accelerate.myqcloud.com/workbuddy/experts/experts/01-Design/UserExperienceArchitect/UserExperienceArchitect_zh.md",
+        "usedAt": 1776750219544,
+        "industryId": "01-Design"
+      }
     ]
   },
-  "lastUpdated": 1776699104324
+  "lastUpdated": 1776761664140
 }

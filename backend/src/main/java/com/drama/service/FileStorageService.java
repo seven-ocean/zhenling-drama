@@ -320,8 +320,15 @@ public class FileStorageService {
         File storageDir = new File("./data/storage");
         if (storageDir.exists()) {
             long totalBytes = getDirSize(storageDir.toPath());
-            status.setLocalUsedBytes(totalBytes);
-            status.setLocalUsedMB(totalBytes / (1024 * 1024));
+            if (totalBytes >= 0) {
+                status.setLocalUsedBytes(totalBytes);
+                status.setLocalUsedMB(totalBytes / (1024 * 1024));
+            } else {
+                // getDirSize 返回 -1 表示权限/IO异常，标记为未知
+                status.setLocalUsedBytes(0);
+                status.setLocalUsedMB(-1); // 前端可据此显示"未知"
+                log.warn("Storage size calculation failed, reporting as unknown");
+            }
         }
         return status;
     }
@@ -376,11 +383,18 @@ public class FileStorageService {
     }
 
     private long getDirSize(Path path) {
+        if (!Files.exists(path)) {
+            return 0L; // 目录不存在，返回0是合理行为
+        }
         try {
             return Files.walk(path).filter(p -> !Files.isDirectory(p)).mapToLong(p -> {
                 try { return Files.size(p); } catch (IOException e) { return 0L; }
             }).sum();
-        } catch (IOException e) { return 0; }
+        } catch (IOException e) {
+            // 目录存在但无法遍历（权限不足/IO错误），记录日志并返回 -1 标记异常
+            log.warn("Failed to calculate directory size for {}: {}", path, e.getMessage());
+            return -1L;
+        }
     }
 
     private String getExtension(String filename) {

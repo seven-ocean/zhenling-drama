@@ -9,6 +9,7 @@ import com.drama.entity.Audio;
 import com.drama.entity.AiConfig;
 import com.drama.entity.Asset;
 import com.drama.entity.Character;
+import com.drama.service.adapter.AiApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -44,8 +45,8 @@ public class TtsService {
     private final FileStorageService fileStorageService;
     private final AssetService assetService;
 
-    // 用于下载 MiniMax 返回的临时音频 URL
-    private final RestTemplate downloadRestTemplate = new RestTemplate();
+    /** 注入由 RestTemplateConfig 创建的 Bean（支持代理/DNS/超时配置） */
+    private final RestTemplate restTemplate;
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
@@ -132,6 +133,9 @@ public class TtsService {
             return audio;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            log.error("AI API error (TTS): [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("TTS generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "配音生成失败: " + e.getMessage());
@@ -216,7 +220,7 @@ public class TtsService {
 
             // 使用 URI 处理带签名的 URL，避免 RestTemplate 二次编码导致签名不匹配
             URI uri = URI.create(tempUrl);
-            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(uri, byte[].class);
+            ResponseEntity<byte[]> response = restTemplate.getForEntity(uri, byte[].class);
 
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 log.warn("[TTS-Archive] Failed to download audio, status={}, using original URL",
@@ -359,6 +363,9 @@ public class TtsService {
             return audioUrl;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            log.error("AI API error (TTS preview): [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("TTS preview failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "试听失败: " + e.getMessage());

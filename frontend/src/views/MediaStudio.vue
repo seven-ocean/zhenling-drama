@@ -151,7 +151,8 @@ const resolveVoiceFromCharacter = (characterId: string) => {
     const voiceExists = ttsVoices.value.some((v: any) => v.value === ch.voiceId)
     if (voiceExists) {
       selectedVoice.value = ch.voiceId
-      console.log(`Auto-resolved voice "${ch.voiceId}" from character "${ch.name || characterId}"`)
+      // 开发环境调试：自动解析角色音色
+      if (import.meta.env.DEV) console.log(`[TTS] Auto-resolved voice "${ch.voiceId}" from character "${ch.name || characterId}"`)
     }
   }
 }
@@ -400,10 +401,10 @@ const generateVideo = async () => {
   } else {
     // 图生视频/首尾帧/主体参考模式：prompt 不是必填但强烈建议有描述性文字，
     // 否则 MiniMax 会用默认描述生成，画面可能不够精准
-    if (!videoPrompt.value.trim()) {
-      // 仅警告，不阻止（用户可能确实只想用图片驱动）
-      console.warn('[视频生成] 未填写提示词，AI将使用默认描述生成，画面可能与预期不符')
-    }
+      if (!videoPrompt.value.trim()) {
+        // 仅警告，不阻止（用户可能确实只想用图片驱动）
+        if (import.meta.env.DEV) console.warn('[视频生成] 未填写提示词，AI将使用默认描述生成，画面可能与预期不符')
+      }
     if (!videoImageUrl.value && videoGenerationMode.value === 'IMAGE_TO_VIDEO') { 
       AMessage.warning('请输入参考图片URL或先选择有图的分镜'); return 
     }
@@ -625,6 +626,9 @@ const loadAssets = async () => {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  // 安全防护：防止组件重复挂载导致多个并行定时器
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+
   await Promise.all([loadAudios(), loadVideos(), loadAssets(), loadStoryboardsForTTS()])
   // 加载角色列表（用于TTS关联）
   try {

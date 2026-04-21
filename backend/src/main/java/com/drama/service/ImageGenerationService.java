@@ -5,6 +5,7 @@ import com.drama.common.IdUtils;
 import com.drama.common.ResultCode;
 import com.drama.config.OssProperties;
 import com.drama.entity.Asset;
+import com.drama.service.adapter.AiApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -73,6 +74,9 @@ public class ImageGenerationService {
             return asset;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            log.error("AI API error (character image): [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("Image generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败: " + e.getMessage());
@@ -119,6 +123,9 @@ public class ImageGenerationService {
             return asset;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            log.error("AI API error (scene image): [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("Image generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败: " + e.getMessage());
@@ -157,6 +164,9 @@ public class ImageGenerationService {
             return asset;
         } catch (BusinessException e) {
             throw e;
+        } catch (AiApiException e) {
+            log.error("AI API error (grid image): [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
         } catch (Exception e) {
             log.error("Image generation failed: {}", e.getMessage(), e);
             throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败: " + e.getMessage());

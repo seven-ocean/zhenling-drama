@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * FFmpeg视频合成服务
@@ -35,7 +36,8 @@ public class VideoComposeService {
 
     private final FfmpegConfig ffmpegConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate downloadRestTemplate = new RestTemplate();
+    /** 注入由 RestTemplateConfig 创建的 Bean（支持代理/DNS/超时配置） */
+    private final RestTemplate restTemplate;
 
     /**
      * FFmpeg 路径配置
@@ -147,7 +149,7 @@ public class VideoComposeService {
                 log.debug("FFmpeg: {}", line);
             }
 
-            int code = p.waitFor();
+            int code = waitForWithTimeout(p, 5, "ComposeShot");
 
             // 清理临时文件
             for (Path tempFile : tempFiles) {
@@ -236,8 +238,8 @@ public class VideoComposeService {
                 log.debug("FFmpeg: {}", line);
             }
             
-            int code = p.waitFor();
-            
+            int code = waitForWithTimeout(p, 10, "Concat");
+
             // 清理临时文件
             for (Path tempFile : tempFiles) {
                 try {
@@ -246,7 +248,7 @@ public class VideoComposeService {
                     log.warn("[Concat] Failed to delete temp file: {}", tempFile);
                 }
             }
-            
+
             if (code != 0) {
                 throw new BusinessException(ResultCode.SERVER_ERROR, "视频拼接失败");
             }
@@ -286,7 +288,7 @@ public class VideoComposeService {
         Path tempFile = Files.createTempFile("video_", extension);
         
         try {
-            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(
+            ResponseEntity<byte[]> response = restTemplate.getForEntity(
                 URI.create(videoUrl), byte[].class);
             
             if (response.getBody() != null) {
@@ -402,13 +404,51 @@ public class VideoComposeService {
     }
 
     /**
-     * 转义FFmpeg drawtext中的特殊字符
+     * 转义FFmpeg drawtext/filter中的特殊字符
+     *
+     * 防御命令注入，转义以下特殊字符：
+     * - '  单引号（drawtext文本边界符）
+     * - :  冒号（滤镜参数分隔符）
+     * - \  反斜杠（转义字符本身）
+     * - %  百分号（FFmpeg中用于引用包/流元数据，可读取任意文件内容）
+     * - [  ] 方括号（FFmpeg滤镜语法字符）
      */
     private String escapeForFFmpeg(String text) {
         if (text == null) return "";
         return text.replace("'", "'\\''")
                    .replace(":", "\\:")
-                   .replace("\\", "\\\\");
+                   .replace("\\", "\\\\")
+                   .replace("%", "\\%")
+                   .replace("[", "\\[")
+                   .replace("]", "\\]");
+    }
+
+    /**
+     * 带超时的进程等待方法
+     * 替代 p.waitFor()，防止 FFmpeg 卡死时无限阻塞 Tomcat 线程
+     *
+     * @param process  进程对象
+     * @param timeoutMinutes 超时时间（分钟）
+     * @param operation 操作名称（用于日志）
+     * @return 进程退出码；超时返回 -1
+     */
+    private int waitForWithTimeout(Process process, int timeoutMinutes, String operation) {
+        try {
+            boolean finished = process.waitFor(timeoutMinutes, TimeUnit.MINUTES);
+            if (!finished) {
+                log.warn("[{}] FFmpeg process timed out after {}min, force destroying...", operation, timeoutMinutes);
+                process.destroyForcibly();
+                // 给进程3秒优雅退出
+                try { process.waitFor(3, TimeUnit.SECONDS); } catch (Exception ignored) {}
+                return -1;
+            }
+            return process.exitValue();
+        } catch (InterruptedException e) {
+            log.warn("[{}] FFmpeg process interrupted: {}", operation, e.getMessage());
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            return -1;
+        }
     }
 
     /**

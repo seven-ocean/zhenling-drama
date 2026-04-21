@@ -146,4 +146,24 @@ public class TaskLogService extends ServiceImpl<TaskLogMapper, TaskLog> {
 
         return this.page(p, wrapper);
     }
+
+    /**
+     * 清理指定时间之前已完成或失败的任务记录（逻辑删除）
+     *
+     * @param cutoff 截止时间，早于此时间的 completed/failed 记录会被清理
+     * @return 实际删除的记录数
+     */
+    public int cleanupOlderThan(LocalDateTime cutoff) {
+        LambdaQueryWrapper<TaskLog> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(TaskLog::getStatus, "completed", "failed")
+               .lt(TaskLog::getCreatedAt, cutoff)
+               .eq(TaskLog::getDeleted, 0);
+        // 先统计符合条件的数量
+        int count = (int) this.count(wrapper);
+        if (count > 0) {
+            // MyBatis-Plus 逻辑删除（@TableLogic）→ UPDATE SET deleted=1
+            this.remove(wrapper);
+        }
+        return count;
+    }
 }

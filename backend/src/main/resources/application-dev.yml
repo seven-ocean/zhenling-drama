@@ -6,7 +6,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: ${MYSQL_PASSWORD:root}
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
@@ -48,3 +48,8 @@ http:
   dns:
     enabled: true      # 开启自定义 DNS 解析
     servers: 8.8.8.8,8.8.4.4  # Google Public DNS
+
+# ====== FFmpeg 配置（开发环境 - Windows）======
+ffmpeg:
+  path: "C:/Data/FFmpeg/ffmpeg-8.1-essentials_build/bin/ffmpeg.exe"
+  probe-path: "C:/Data/FFmpeg/ffmpeg-8.1-essentials_build/bin/ffprobe.exe"
