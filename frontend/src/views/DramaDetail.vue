@@ -419,6 +419,7 @@ const loadingImages = ref(false)
 const imagePickerPage = ref(1)
 const hasMoreImages = ref(true)
 const loadingMoreImages = ref(false)
+const imagePickerScrollRef = ref<HTMLElement | null>(null)
 
 // AI 生成状态
 const generatingCharImg = ref<string | null>(null)
@@ -1042,9 +1043,10 @@ const clearImageUrl = (target: 'char' | 'scene') => {
     <!-- ====== 从存储选择图片弹窗 ====== -->
     <a-modal v-model:open="imagePickerOpen"
       title="选择图片（素材库）" okText="" cancelText="关闭" width="600px" destroyOnClose
-      :body-style="{ maxHeight: '60vh', overflow: 'auto', padding: '16px' }"
-      @scroll="onImagePickerScroll">
-      <div class="space-y-3" @scroll="onImagePickerScroll">
+      :body-style="{ padding: '16px', overflow: 'hidden' }">
+      <div ref="imagePickerScrollRef"
+        style="max-height: calc(60vh - 20px); overflow-y: auto; padding: 4px;"
+        @scroll="onImagePickerScroll">
         <!-- Loading -->
         <div v-if="loadingImages" class="flex justify-center py-8"><a-spin tip="加载中..." /></div>
 

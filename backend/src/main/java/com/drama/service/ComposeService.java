@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -36,6 +37,8 @@ import java.util.stream.Collectors;
 public class ComposeService {
 
     private final VideoComposeService videoComposeService;
+    private final AudioSyncEngine audioSyncEngine;       // 新增：音画对齐引擎
+    private final SubtitleRenderer subtitleRenderer;      // 新增：ASS字幕渲染器
     private final VideoMapper videoMapper;
     private final AudioMapper audioMapper;
     private final StoryboardMapper storyboardMapper;
@@ -44,7 +47,7 @@ public class ComposeService {
     private final AssetService assetService;
 
     /**
-     * 直接合成单镜头（传入原始路径）
+     * 直接合成单镜头（传入原始路径）— 使用智能音画对齐引擎
      */
     public Map<String, Object> composeShot(String videoPath, String audioPath, String subtitle) {
         // 生成临时输出路径
@@ -52,27 +55,49 @@ public class ComposeService {
         String outputFileName = "composed_" + System.currentTimeMillis() + "_" + IdUtils.randomId().substring(0, 8) + ".mp4";
         String outputPath = tempDir + File.separator + outputFileName;
 
-        videoComposeService.composeShot(videoPath, audioPath, subtitle, outputPath);
-
-        // 获取合成后的视频信息
         try {
-            VideoComposeService.VideoInfo info = videoComposeService.getVideoInfo(outputPath);
+            // 生成 ASS 字幕文件（如果有台词）
+            String assPath = null;
+            if (subtitle != null && !subtitle.isBlank()) {
+                Path assFile = subtitleRenderer.generateForShot(subtitle, 5f, outputPath);
+                if (assFile != null) assPath = assFile.toString();
+            }
+
+            // 使用音画对齐引擎进行智能混流
+            AudioSyncEngine.SyncResult syncResult = audioSyncEngine.composeWithSync(
+                    videoPath, audioPath, assPath, outputPath);
+
             return Map.of(
                     "outputPath", outputPath,
                     "success", true,
-                    "duration", info.getDuration() != null ? info.getDuration() : 0,
-                    "width", info.getWidth() != null ? info.getWidth() : 0,
-                    "height", info.getHeight() != null ? info.getHeight() : 0,
-                    "codec", info.getCodec() != null ? info.getCodec() : "unknown"
+                    "duration", syncResult.getOutputDuration(),
+                    "strategy", syncResult.getStrategy(),
+                    "videoDuration", syncResult.getVideoDuration(),
+                    "audioDuration", syncResult.getAudioDuration()
             );
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("Failed to get composed video info: {}", e.getMessage());
-            return Map.of("outputPath", outputPath, "success", true);
+            log.warn("[composeShot] Smart sync failed, falling back: {}", e.getMessage());
+            // 降级到简单模式
+            try {
+                videoComposeService.composeShot(videoPath, audioPath, null, outputPath);
+                VideoComposeService.VideoInfo info = videoComposeService.getVideoInfo(outputPath);
+                return Map.of(
+                        "outputPath", outputPath,
+                        "success", true,
+                        "duration", info.getDuration() != null ? info.getDuration() : 0,
+                        "strategy", "FALLBACK_SIMPLE"
+                );
+            } catch (Exception fallbackEx) {
+                log.error("[composeShot] Fallback also failed: {}", fallbackEx.getMessage());
+                throw new BusinessException(ResultCode.SERVER_ERROR, "视频合成失败: " + e.getMessage());
+            }
         }
     }
 
     /**
-     * 按分镜ID自动查找关联的视频和音频，然后合成
+     * 按分镜ID自动查找关联的视频和音频，然后合成（使用音画对齐引擎）
      */
     @Transactional
     public Map<String, Object> composeShotByStoryboard(String dramaId, String storyboardId, int episodeNumber) {
@@ -105,26 +130,31 @@ public class ComposeService {
             log.warn("No audio found for storyboard {}: {}", storyboardId, e.getMessage());
         }
 
-        // 3. 提取台词作为字幕（如果有的话）
-        String subtitle = null; // 可从 Storyboard 实体获取 dialogue 字段
+        // 3. 提取台词作为字幕
+        String subtitle = null; // 从 Storyboard 实体获取 dialogue 字段（在 composeEpisode 中传入）
 
-        // 4. 调用 FFmpeg 合成
+        // 4. 调用智能音画对齐引擎合成
         String outputDir = System.getProperty("user.dir") + "/data/composed/" + dramaId + "/";
         new File(outputDir).mkdirs();
         String outputPath = outputDir + "shot_" + storyboardId.substring(0, 8) + "_" +
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".mp4";
 
         try {
-            videoComposeService.composeShot(video.getVideoUrl(), audioPath, subtitle, outputPath);
+            // 生成 ASS 字幕文件
+            String assPath = null;
 
-            VideoComposeService.VideoInfo info = videoComposeService.getVideoInfo(outputPath);
+            // 5. 调用 AudioSyncEngine
+            AudioSyncEngine.SyncResult syncResult = audioSyncEngine.composeWithSync(
+                    video.getVideoUrl(), audioPath, assPath, outputPath);
+
             return Map.of(
                     "outputPath", outputPath,
                     "success", true,
                     "storyboardId", storyboardId,
                     "videoSource", video.getVideoUrl(),
                     "hasAudio", audioPath != null,
-                    "duration", info.getDuration() != null ? info.getDuration() : 0
+                    "duration", syncResult.getOutputDuration(),
+                    "strategy", syncResult.getStrategy()
             );
         } catch (BusinessException e) {
             throw e;
@@ -196,11 +226,12 @@ public class ComposeService {
             }
         }
 
-        // ========== Step 4: 按分镜顺序逐个合成镜头（视频+音频合并） ==========
+        // ========== Step 4: 按分镜顺序逐个合成镜头（智能音画对齐+字幕） ==========
         String outputDir = System.getProperty("user.dir") + "/data/composed/" + dramaId + "/";
         new File(outputDir).mkdirs();
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         List<String> composedShotPaths = new ArrayList<>();
+        List<Map<String, Object>> shotDetails = new ArrayList<>();  // 新增：记录每个镜头详情
         int shotCount = 0;
 
         for (Storyboard sb : storyboards) {
@@ -215,21 +246,86 @@ public class ComposeService {
             String audioPath = (audio != null && audio.getAudioUrl() != null) ? audio.getAudioUrl() : null;
 
             // 提取台词作为字幕
-            String subtitle = sb.getDialogue();
+            String dialogue = sb.getDialogue();
 
             try {
                 String shotOutputPath = outputDir + String.format("shot_%03d_%s.mp4", sb.getShotNumber(), timestamp);
-                videoComposeService.composeShot(video.getVideoUrl(), audioPath, subtitle, shotOutputPath);
+
+                // BUG00036-A Fix: 先探测视频/音频时长，动态计算ASS字幕时间轴长度
+                // （旧代码硬编码 10f，导致PAD_SILENCE等长输出时字幕时间轴不够）
+                float estimatedDuration = 10f; // 默认值（兜底）
+                try {
+                    VideoComposeService.VideoInfo vInfo = videoComposeService.getVideoInfo(video.getVideoUrl());
+                    float vDur = vInfo.getDuration() != null ? vInfo.getDuration() : 5f;
+                    float aDur = 0f;
+                    if (audioPath != null) {
+                        try {
+                            VideoComposeService.AudioInfo aInfo = videoComposeService.getAudioInfo(audioPath);
+                            aDur = aInfo.getDuration() != null ? aInfo.getDuration() : 0f;
+                        } catch (Exception ignored) {}
+                    }
+                    // 取最大值 × 1.2 倍余量 + 2秒缓冲，覆盖所有策略的输出范围
+                    estimatedDuration = Math.max(vDur, aDur) * 1.2f + 2f;
+                    // 合理边界：最小5秒，最大5分钟
+                    estimatedDuration = Math.max(5f, Math.min(estimatedDuration, 300f));
+                } catch (Exception probeEx) {
+                    log.warn("[ComposeEpisode] Duration probe failed for shot #{}, using default 10s: {}",
+                            sb.getShotNumber(), probeEx.getMessage());
+                }
+
+                // 生成 ASS 字幕文件（使用动态计算的时长）
+                Path assFile = subtitleRenderer.generateForShot(dialogue, estimatedDuration, shotOutputPath);
+                String assPath = (assFile != null) ? assFile.toString() : null;
+
+                // 使用智能音画对齐引擎
+                AudioSyncEngine.SyncResult syncResult = audioSyncEngine.composeWithSync(
+                        video.getVideoUrl(), audioPath, assPath, shotOutputPath);
+
                 composedShotPaths.add(shotOutputPath);
                 shotCount++;
-                log.info("[ComposeEpisode] Composed shot #{}: video={}, hasAudio={}, subtitle={}",
-                        sb.getShotNumber(), video.getModel(), audioPath != null,
-                        subtitle != null ? subtitle.substring(0, Math.min(20, subtitle.length())) : "null");
+
+                // 记录镜头详情
+                Map<String, Object> detail = new java.util.HashMap<>();
+                detail.put("shotNumber", sb.getShotNumber());
+                detail.put("storyboardId", sb.getId());
+                detail.put("strategy", syncResult.getStrategy());
+                detail.put("videoDuration", syncResult.getVideoDuration());
+                detail.put("audioDuration", syncResult.getAudioDuration());
+                detail.put("outputDuration", syncResult.getOutputDuration());
+                detail.put("hasSubtitle", syncResult.isHasSubtitle());
+                detail.put("dialogue", dialogue != null && dialogue.length() > 20 ?
+                        dialogue.substring(0, 20) + "..." : dialogue);
+                shotDetails.add(detail);
+
+                log.info("[ComposeEpisode] Composed shot #{}: strategy={}, v={}s a={}s → out={}s sub={}",
+                        sb.getShotNumber(), syncResult.getStrategy(),
+                        syncResult.getVideoDuration(), syncResult.getAudioDuration(),
+                        syncResult.getOutputDuration(), syncResult.isHasSubtitle());
             } catch (Exception e) {
-                log.warn("[ComposeEpisode] Shot #{} composition failed, using original video: {}",
-                        sb.getShotNumber(), e.getMessage());
-                // 合成失败时降级：直接用原始视频
-                composedShotPaths.add(video.getVideoUrl());
+                log.warn("[ComposeEpisode] Shot #{} composition failed ({}): {}",
+                        sb.getShotNumber(), e.getClass().getSimpleName(), e.getMessage());
+                // BUG00036-D Fix: 降级时先下载到本地，避免远程URL直接传入concat导致拼接失败
+                String fallbackPath = video.getVideoUrl();
+                try {
+                    // 尝试下载视频到本地临时文件（composeWithSync 内部也会下载）
+                    java.nio.file.Path localVideo = videoComposeService.downloadVideoToTemp(video.getVideoUrl());
+                    if (localVideo != null && java.nio.file.Files.exists(localVideo)) {
+                        fallbackPath = localVideo.toString();
+                        log.info("[ComposeEpisode] Shot #{} fallback: downloaded to local file", sb.getShotNumber());
+                    }
+                } catch (Exception dlEx) {
+                    log.warn("[ComposeEpisode] Shot #{} fallback download failed, will try raw URL: {}",
+                            sb.getShotNumber(), dlEx.getMessage());
+                }
+                composedShotPaths.add(fallbackPath);
+
+                Map<String, Object> failDetail = new java.util.HashMap<>();
+                failDetail.put("shotNumber", sb.getShotNumber());
+                failDetail.put("storyboardId", sb.getId());
+                failDetail.put("strategy", "FAILED_FALLBACK");
+                failDetail.put("error", e.getMessage());
+                shotDetails.add(failDetail);
+
                 shotCount++;
             }
         }
@@ -240,7 +336,21 @@ public class ComposeService {
 
         // ========== Step 5: 将所有合成后的镜头按顺序拼接 ==========
         String finalOutputPath = outputDir + "episode_" + episodeNumber + "_" + timestamp + ".mp4";
-        String finalPath = videoComposeService.concatVideos(composedShotPaths, finalOutputPath);
+        
+        // 转场拼接：目前默认使用快速模式（concat copy），后续可通过参数启用转场
+        // TODO: 前端传入 useTransition / transitionType 参数后，改用 videoComposeService.concatWithTransition()
+        boolean useTransition = false;  // 默认关闭转场（快速模式）
+        float transitionDuration = 0.5f;
+        String transitionType = "fade";
+        
+        String finalPath;
+        if (useTransition && composedShotPaths.size() > 1) {
+            finalPath = videoComposeService.concatWithTransition(
+                    composedShotPaths, finalOutputPath, transitionDuration, transitionType);
+            log.info("[ComposeEpisode] Used xfade transition (type={}, dur={})", transitionType, transitionDuration);
+        } else {
+            finalPath = videoComposeService.concatVideos(composedShotPaths, finalOutputPath);
+        }
 
         // ========== Step 6: 获取合成后视频信息 ==========
         float duration = 0f;
@@ -284,10 +394,23 @@ public class ComposeService {
         exportRecord.setDuration(duration);
         exportRecord.setStatus("completed");
         exportRecord.setExportUrl(finalUrl);
-        exportRecord.setExtraData("{\"shotCount\":" + shotCount +
-                ",\"storyboardCount\":" + storyboards.size() +
-                ",\"withAudioMerged\":true" +
-                ",\"composedAt\":\"" + LocalDateTime.now().toString() + "\"}");
+        // 将镜头对齐详情序列化到 extraData
+        try {
+            String shotDetailsJson = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .writerWithDefaultPrettyPrinter().writeValueAsString(shotDetails);
+            exportRecord.setExtraData("{\"shotCount\":" + shotCount +
+                    ",\"storyboardCount\":" + storyboards.size() +
+                    ",\"withAudioSync\":true" +
+                    ",\"withSubtitleRender\":true" +
+                    ",\"composedAt\":\"" + LocalDateTime.now().toString() + "\"" +
+                    ",\"shotDetails\":" + shotDetailsJson + "}");
+        } catch (Exception jsonEx) {
+            log.warn("Failed to serialize shot details: {}", jsonEx.getMessage());
+            exportRecord.setExtraData("{\"shotCount\":" + shotCount +
+                    ",\"storyboardCount\":" + storyboards.size() +
+                    ",\"withAudioSync\":true" +
+                    ",\"composedAt\":\"" + LocalDateTime.now().toString() + "\"}");
+        }
         exportRecord.setCreatedAt(LocalDateTime.now());
         exportRecord.setUpdatedAt(LocalDateTime.now());
         exportRecord.setDeleted(0);

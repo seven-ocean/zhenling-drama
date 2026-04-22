@@ -180,6 +180,30 @@ const openSbEditor = (shot?: any) => {
   sbEditorOpen.value = true
 }
 
+// 选择角色后：自动更新关联信息 + 回填 characterImageUrl
+const onSbSelectCharacter = (characterId: string) => {
+  sbForm.value.characterId = characterId
+  const char = characters.value.find(c => c.id === characterId)
+  if (char) {
+    relatedCharImage.value = char.imageUrl || ''
+    relatedCharName.value = char.name || ''
+    sbForm.value.characterName = char.name
+    sbForm.value.characterImageUrl = char.imageUrl || ''
+  }
+}
+
+// 选择场景后：自动更新关联信息 + 回填 sceneImageUrl
+const onSbSelectScene = (sceneId: string) => {
+  sbForm.value.sceneId = sceneId
+  const scene = scenes.value.find(s => s.id === sceneId)
+  if (scene) {
+    relatedSceneImage.value = scene.imageUrl || ''
+    relatedSceneName.value = scene.name || ''
+    sbForm.value.sceneName = scene.name
+    sbForm.value.sceneImageUrl = scene.imageUrl || ''
+  }
+}
+
 const saveShot = async () => {
   if (!editingSb.value?.id) return
   try {
@@ -801,9 +825,44 @@ onUnmounted(() => {
           </div>
         </div>
         
-        <!-- 提示信息：无关联图片 -->
-        <div v-else-if="!relatedCharImage && !relatedSceneImage" class="p-3 bg-[#1a1a1a] rounded-lg text-center">
-          <p class="text-xs text-gray-500">该分镜未关联角色或场景</p>
+        <!-- 手动关联角色/场景选择器 -->
+        <div class="grid grid-cols-2 gap-3 p-3 bg-[#1a1a1a] rounded-lg">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 flex items-center gap-1">
+              <UserOutlined /> 关联角色
+            </label>
+            <a-select
+              v-model:value="sbForm.characterId"
+              placeholder="选择角色..."
+              size="small"
+              allowClear
+              showSearch
+              class="w-full"
+              @change="onSbSelectCharacter"
+            >
+              <a-select-option v-for="char in characters" :key="char.id" :value="char.id">
+                {{ char.name }}{{ char.imageUrl ? ' 📸' : '' }}
+              </a-select-option>
+            </a-select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5 flex items-center gap-1">
+              <PictureOutlined /> 关联场景
+            </label>
+            <a-select
+              v-model:value="sbForm.sceneId"
+              placeholder="选择场景..."
+              size="small"
+              allowClear
+              showSearch
+              class="w-full"
+              @change="onSbSelectScene"
+            >
+              <a-select-option v-for="scene in scenes" :key="scene.id" :value="scene.id">
+                {{ scene.name }}{{ scene.imageUrl ? ' 📸' : '' }}
+              </a-select-option>
+            </a-select>
+          </div>
         </div>
 
         <a-divider class="!my-2 !border-[#333]" />

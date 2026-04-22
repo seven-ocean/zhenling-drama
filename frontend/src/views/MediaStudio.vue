@@ -348,6 +348,22 @@ const clearPickedImage = (target: ImagePickerTarget) => {
   }
 }
 
+/** 在图片选择器内上传图片 */
+const handlePickerUpload = async (file: any) => {
+  try {
+    const res = await assetApi.upload(file, dramaId.value)
+    if (res.code === 200 && res.data) {
+      AMessage.success('图片上传成功')
+      // 直接选中新上传的图片
+      selectImage(res.data)
+    } else {
+      AMessage.error(res.message || '上传失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '上传失败')
+  }
+}
+
 /** 获取当前目标已选信息 */
 const currentPickedImage = computed(() => {
   switch (imagePickerTarget.value) {
@@ -526,6 +542,9 @@ const composeEpisodeNumber = ref(1)
 const ffmpegAvailable = ref(true)
 const composeRecords = ref<any[]>([])
 const composeLoading = ref(false)
+// 新增：上次合成的镜头对齐详情
+const lastComposeDetails = ref<any[]>([])
+const lastComposeSummary = ref<{ shotCount: number; totalDuration: number } | null>(null)
 
 // 检查 FFmpeg 状态
 const checkFfmpeg = async () => {
@@ -545,15 +564,39 @@ const composeEpisode = async () => {
   if (!ffmpegAvailable.value) { AMessage.warning('FFmpeg 未安装，无法进行视频合成'); return }
 
   composing.value = true
+  lastComposeDetails.value = []
+  lastComposeSummary.value = null
+
   try {
     const res = await composeApi.composeEpisode(dramaId.value, composeEpisodeNumber.value)
     if (res.code === 200 && res.data) {
-      AMessage.success(`第${composeEpisodeNumber.value}集合成成功！共 ${res.data.shotCount || 0} 个镜头`)
+      const data = res.data as any
+      // 解析镜头详情（extraData 中的 shotDetails 数组）
+      let details: any[] = []
+      try {
+        const extraData = typeof data.extraData === 'string' ? JSON.parse(data.extraData) : (data.extraData || {})
+        details = extraData.shotDetails || []
+      } catch (e) { /* extraData 解析失败则忽略 */ }
+
+      // 统计策略分布
+      const strategyCounts: Record<string, number> = {}
+      let totalDur = 0
+      for (const d of details) {
+        const s = d.strategy || 'unknown'
+        strategyCounts[s] = (strategyCounts[s] || 0) + 1
+        totalDur += d.outputDuration || 0
+      }
+      
+      lastComposeDetails.value = details
+      lastComposeSummary.value = { shotCount: data.shotCount || details.length, totalDuration: Math.round(totalDur * 10) / 10 }
+
+      AMessage.success(`第${composeEpisodeNumber.value}集合成成功！共 ${data.shotCount || 0} 个镜头，总时长 ${Math.round(totalDuration * 10) / 10}s`)
+
       // 刷新记录
       await loadComposeRecords()
       // 提供下载
-      if (res.data.exportUrl) {
-        window.open(res.data.exportUrl, '_blank')
+      if (data.exportUrl) {
+        window.open(data.exportUrl, '_blank')
       }
     } else {
       AMessage.error(res.message || '合成失败')
@@ -564,6 +607,42 @@ const composeEpisode = async () => {
     composing.value = false
   }
 }
+
+/** 策略标签颜色映射 */
+const strategyColor = (strategy: string): string => {
+  switch (strategy) {
+    case 'DIRECT_BLEND': return 'green'
+    case 'EXTEND_VIDEO_FREEZE': return 'blue'
+    case 'PAD_AUDIO_SILENCE': return 'orange'
+    case 'VIDEO_ONLY': return 'default'
+    case 'FAILED_FALLBACK': return 'red'
+    case 'FALLBACK_SIMPLE': return 'gold'
+    default: return 'default'
+  }
+}
+
+/** 策略显示名称映射 */
+const strategyLabel = (strategy: string): string => {
+  switch (strategy) {
+    case 'DIRECT_BLEND': return '✅ 直接混流'
+    case 'EXTEND_VIDEO_FREEZE': return '🔵 冻结延展'
+    case 'PAD_AUDIO_SILENCE': return '🟢 补静音'
+    case 'VIDEO_ONLY': return '⚪ 纯画面'
+    case 'FAILED_FALLBACK': return '🔴 降级(原始)'
+    case 'FALLBACK_SIMPLE': return '🟡 降级(简单)'
+    default: return strategy
+  }
+}
+
+/** 策略分布统计（用于汇总行展示） */
+const strategyDistribution = computed(() => {
+  const dist: Record<string, number> = {}
+  for (const d of lastComposeDetails.value) {
+    const s = d.strategy || 'unknown'
+    dist[s] = (dist[s] || 0) + 1
+  }
+  return dist
+})
 
 // 加载合成记录
 const loadComposeRecords = async () => {
@@ -1260,6 +1339,75 @@ const statusLabelMap: Record<string, string> = {
         <p v-if="ffmpegAvailable" class="text-[10px] text-[#555] mt-2">💡 前提：工作台中该集至少有 1 个状态为"已完成"的视频</p>
       </div>
 
+      <!-- 镜头对齐详情（合成后展示） -->
+      <div v-if="lastComposeDetails.length > 0" class="rounded-xl p-5 sm:p-6 border border-[#2a2a2a] bg-[#1a1a1a]">
+        <h4 class="text-sm font-medium text-[#f5f5f5] mb-3 flex items-center gap-2">
+          🔗 音画对齐详情
+        </h4>
+        
+        <!-- 汇总行 -->
+        <div v-if="lastComposeSummary" class="flex flex-wrap items-center gap-4 mb-3 pb-3 border-b border-[#2a2a2a]">
+          <span class="text-xs text-[#aaa]">
+            共 <span class="text-white font-medium">{{ lastComposeSummary.shotCount }}</span> 个镜头
+            · 总时长 <span class="text-green-400 font-medium">{{ lastComposeSummary.totalDuration }}s</span>
+          </span>
+          <!-- 策略分布 -->
+          <template v-for="(count, strategy) in strategyDistribution" :key="strategy">
+            <a-tag :color="strategyColor(strategy)" class="!text-xs !py-0 !px-1.5 !rounded-md">
+              {{ strategyLabel(strategy) }} × {{ count }}
+            </a-tag>
+          </template>
+        </div>
+
+        <!-- 每个镜头详情表 -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-[#666] text-left border-b border-[#2a2a2a]">
+                <th class="pb-2 pr-3 font-medium">#</th>
+                <th class="pb-2 pr-3 font-medium">策略</th>
+                <th class="pb-2 pr-3 font-medium">视频</th>
+                <th class="pb-2 pr-3 font-medium">音频</th>
+                <th class="pb-2 pr-3 font-medium">输出</th>
+                <th class="pb-2 pr-3 font-medium">台词</th>
+                <th class="pb-2 font-medium">字幕</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="detail in lastComposeDetails" :key="detail.shotNumber"
+                class="border-b border-[#1f1f1f] hover:bg-[#222] transition-colors">
+                <td class="py-2 pr-3 text-[#888]">#{{ detail.shotNumber }}</td>
+                <td class="py-2 pr-3">
+                  <a-tag :color="strategyColor(detail.strategy)" class="!text-[10px] !py-0 !px-1 !rounded">
+                    {{ strategyLabel(detail.strategy) }}
+                  </a-tag>
+                </td>
+                <td class="py-2 pr-3 text-[#ccc]">{{ (detail.videoDuration || 0).toFixed(1) }}s</td>
+                <td class="py-2 pr-3" :class="detail.audioDuration > detail.videoDuration ? 'text-orange-400' : detail.videoDuration > 0 && detail.audioDuration > 0 ? 'text-blue-400' : 'text-[#555]'">
+                  {{ detail.audioDuration > 0 ? detail.audioDuration.toFixed(1) + 's' : '-' }}
+                </td>
+                <td class="py-2 pr-3 text-green-400 font-medium">{{ (detail.outputDuration || 0).toFixed(1) }}s</td>
+                <td class="py-2 pr-3 text-[#999] max-w-[150px] truncate" :title="detail.dialogue">
+                  {{ detail.dialogue || '-' }}
+                </td>
+                <td class="py-2">
+                  <span v-if="detail.hasSubtitle" class="text-purple-400">✓ ASS</span>
+                  <span v-else class="text-[#444]">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 策略说明 -->
+        <div class="mt-3 pt-3 border-t border-[#2a2a2a] flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[#555]">
+          <span>✅ 直接混流 = 音画时长相近</span>
+          <span>🔵 冻结延展 = 配音较长，画面末帧延展</span>
+          <span>🟢 补静音 = 配音较短，音频后补空白</span>
+          <span>⚪ 纯画面 = 无配音</span>
+        </div>
+      </div>
+
       <!-- 合成历史 -->
       <div>
         <div class="flex items-center justify-between mb-3">
@@ -1358,44 +1506,65 @@ const statusLabelMap: Record<string, string> = {
   <!-- 图片选择器弹窗 -->
   <a-modal
     v-model:open="imagePickerOpen"
-    title="从素材库选择图片"
+    title="选择图片"
     :footer="null"
     width="700px"
     :centered="true"
   >
     <div class="space-y-3">
       <p class="text-xs text-[#888]">选择一张图片作为{{ {videoImage:'参考图片',firstFrame:'首帧图片',lastFrame:'尾帧图片',subjectImage:'主体参考图片'}[imagePickerTarget] }}</p>
-      <a-spin :spinning="imagePickerLoading">
-        <div v-if="imagePickerAssets.length > 0" class="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[400px] overflow-y-auto pr-1" @scroll="onPickerScroll">
-          <div
-            v-for="asset in imagePickerAssets"
-            :key="asset.id"
-            class="relative aspect-square bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden cursor-pointer hover:border-[#6366f1]/60 transition-all group"
-            @click="selectImage(asset)"
-          >
-            <img :src="asset.fileUrl" class="w-full h-full object-cover" />
-            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <span class="text-white text-xs font-medium px-2 py-1 rounded bg-[#6366f1]">选择</span>
-            </div>
-            <div class="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent">
-              <p class="text-[9px] text-white truncate">{{ asset.filename }}</p>
+      
+      <!-- 上传区域 -->
+      <div class="border border-dashed border-[#3a3a4a] rounded-lg p-3 hover:border-[#6366f1]/40 transition-colors">
+        <a-upload
+          name="file"
+          :show-upload-list="false"
+          :before-upload="(file: any) => { handlePickerUpload(file); return false; }"
+          accept="image/*"
+        >
+          <div class="flex items-center justify-center gap-2 cursor-pointer text-[#808080] hover:text-[#6366f1] transition-colors">
+            <CloudUploadOutlined />
+            <span class="text-xs">点击上传图片到素材库</span>
+          </div>
+        </a-upload>
+      </div>
+
+      <!-- 图片网格滚动容器 -->
+      <div class="max-h-[400px] overflow-y-auto pr-1" @scroll="onPickerScroll">
+        <a-spin :spinning="imagePickerLoading">
+          <!-- 图片网格 -->
+          <div v-if="imagePickerAssets.length > 0" class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            <div
+              v-for="asset in imagePickerAssets"
+              :key="asset.id"
+              class="relative aspect-square bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden cursor-pointer hover:border-[#6366f1]/60 transition-all group"
+              @click="selectImage(asset)"
+            >
+              <img :src="asset.fileUrl" class="w-full h-full object-cover" />
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <span class="text-white text-xs font-medium px-2 py-1 rounded bg-[#6366f1]">选择</span>
+              </div>
+              <div class="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/80 to-transparent">
+                <p class="text-[9px] text-white truncate">{{ asset.filename }}</p>
+              </div>
             </div>
           </div>
-        </div>
-        <!-- 加载更多指示 -->
+          <!-- 空状态 -->
+          <div v-else-if="!imagePickerLoading && imagePickerAssets.length === 0" class="text-center py-12">
+            <a-empty description="素材库暂无图片，请先上传" />
+            <a-button type="link" size="small" @click="imagePickerOpen = false; activeTab='assets'">
+              去上传 →
+            </a-button>
+          </div>
+        </a-spin>
+        <!-- 加载更多指示（放在滚动容器内） -->
         <div v-if="imagePickerLoadingMore" class="flex justify-center py-3">
           <a-spin size="small" tip="加载更多..." />
         </div>
         <div v-else-if="!imagePickerHasMore && imagePickerAssets.length > 0" class="text-center py-3 text-[#666] text-xs">
           已加载全部 {{ imagePickerAssets.length }} 张图片
         </div>
-        <div v-else-if="!imagePickerLoading && imagePickerAssets.length === 0" class="text-center py-12">
-          <a-empty description="素材库暂无图片，请先上传" />
-          <a-button type="link" size="small" @click="imagePickerOpen = false; activeTab='assets'">
-            去上传 →
-          </a-button>
-        </div>
-      </a-spin>
+      </div>
     </div>
   </a-modal>
 </template>
