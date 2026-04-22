@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { mediaApi } from '@/utils/media'
 import { audioApi, videoApi } from '@/utils/request'
 import { assetApi } from '@/utils/asset'
@@ -9,6 +9,7 @@ import { aiConfigApi, ttsPreviewApi } from '@/utils/aiConfig'
 import { storyboardApi } from '@/utils/request'
 import { message as AMessage } from 'ant-design-vue'
 import {
+  ArrowLeftOutlined,
   AudioOutlined,
   VideoCameraOutlined,
   MergeCellsOutlined,
@@ -26,6 +27,7 @@ import {
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
+const router = useRouter()
 // dramaId 从路由参数获取（路由: /media/:dramaId）
 const dramaId = computed(() => (route.params.dramaId as string) || '')
 
@@ -252,6 +254,9 @@ const imagePickerOpen = ref(false)
 const imagePickerTarget = ref<ImagePickerTarget>('videoImage')
 const imagePickerAssets = ref<any[]>([])
 const imagePickerLoading = ref(false)
+const imagePickerPage = ref(1)
+const imagePickerHasMore = ref(true)
+const imagePickerLoadingMore = ref(false)
 
 // 已选图片的展示信息（用于缩略图预览）
 const pickedVideoImage = ref<{ url: string; filename: string } | null>(null)
@@ -263,16 +268,44 @@ const pickedSubjectImage = ref<{ url: string; filename: string } | null>(null)
 const openImagePicker = async (target: ImagePickerTarget) => {
   imagePickerTarget.value = target
   imagePickerOpen.value = true
-  imagePickerLoading.value = true
+  imagePickerPage.value = 1
+  imagePickerHasMore.value = true
+  await loadPickerAssets(false)
+}
+
+/** 加载素材（支持分页+加载更多） */
+const loadPickerAssets = async (isLoadMore = false) => {
+  if (isLoadMore) {
+    imagePickerLoadingMore.value = true
+  } else {
+    imagePickerLoading.value = true
+  }
   try {
-    const res = await assetApi.page({ dramaId: dramaId.value, pageNum: 1, pageSize: 50, type: 'image' })
+    const res = await assetApi.page({ dramaId: dramaId.value, pageNum: imagePickerPage.value, pageSize: 24, type: 'image' })
     if (res.code === 200) {
-      imagePickerAssets.value = res.data?.records || []
+      const list = res.data?.records || []
+      if (isLoadMore) {
+        imagePickerAssets.value.push(...list)
+      } else {
+        imagePickerAssets.value = list
+      }
+      const total = res.data?.total || 0
+      imagePickerHasMore.value = imagePickerAssets.value.length < total && list.length === 24
     }
-  } catch (e) {
-    console.error('Failed to load assets for picker:', e)
-  } finally {
+  } catch (e) { console.error('Failed to load assets for picker:', e) }
+  finally {
     imagePickerLoading.value = false
+    imagePickerLoadingMore.value = false
+  }
+}
+
+/** 滚动加载更多 */
+const onPickerScroll = (e: Event) => {
+  const target = e.target as HTMLElement
+  const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (scrollBottom < 80 && imagePickerHasMore.value && !imagePickerLoadingMore.value) {
+    imagePickerPage.value++
+    loadPickerAssets(true)
   }
 }
 
@@ -724,12 +757,17 @@ const statusLabelMap: Record<string, string> = {
 </script>
 
 <template>
-  <div class="w-full space-y-4 sm:space-y-6">
+  <div class="media-studio-container space-y-4 sm:space-y-6">
     <!-- 页面标题 -->
-    <h1 class="text-lg sm:text-xl font-semibold text-[#f5f5f5] flex items-center gap-2">
-      <AudioOutlined />
-      媒体工作室
-    </h1>
+    <div class="flex items-center gap-3">
+      <a-button type="text" @click="router.back()" class="!p-2 !text-[#a0a0a0] hover:!bg-[#242424] rounded-xl shrink-0">
+        <ArrowLeftOutlined />
+      </a-button>
+      <h1 class="text-lg sm:text-xl font-semibold text-[#f5f5f5] flex items-center gap-2">
+        <AudioOutlined />
+        媒体工作室
+      </h1>
+    </div>
 
     <!-- Tab Bar -->
     <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -1328,7 +1366,7 @@ const statusLabelMap: Record<string, string> = {
     <div class="space-y-3">
       <p class="text-xs text-[#888]">选择一张图片作为{{ {videoImage:'参考图片',firstFrame:'首帧图片',lastFrame:'尾帧图片',subjectImage:'主体参考图片'}[imagePickerTarget] }}</p>
       <a-spin :spinning="imagePickerLoading">
-        <div v-if="imagePickerAssets.length > 0" class="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[400px] overflow-y-auto pr-1">
+        <div v-if="imagePickerAssets.length > 0" class="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[400px] overflow-y-auto pr-1" @scroll="onPickerScroll">
           <div
             v-for="asset in imagePickerAssets"
             :key="asset.id"
@@ -1344,7 +1382,14 @@ const statusLabelMap: Record<string, string> = {
             </div>
           </div>
         </div>
-        <div v-else class="text-center py-12">
+        <!-- 加载更多指示 -->
+        <div v-if="imagePickerLoadingMore" class="flex justify-center py-3">
+          <a-spin size="small" tip="加载更多..." />
+        </div>
+        <div v-else-if="!imagePickerHasMore && imagePickerAssets.length > 0" class="text-center py-3 text-[#666] text-xs">
+          已加载全部 {{ imagePickerAssets.length }} 张图片
+        </div>
+        <div v-else-if="!imagePickerLoading && imagePickerAssets.length === 0" class="text-center py-12">
           <a-empty description="素材库暂无图片，请先上传" />
           <a-button type="link" size="small" @click="imagePickerOpen = false; activeTab='assets'">
             去上传 →
@@ -1387,6 +1432,21 @@ export default { data: () => ({ formatFileSize, formatDuration, formatTime }) }
 </script>
 
 <style scoped>
+.media-studio-container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+@media (min-width: 768px) {
+  .media-studio-container { padding: 0 32px; }
+}
+@media (min-width: 1024px) {
+  .media-studio-container { padding: 0 48px; }
+}
+.space-y-4 > * + * { margin-top: 1rem; }
+.sm\:space-y-6 > * + * { margin-top: 1.5rem; }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

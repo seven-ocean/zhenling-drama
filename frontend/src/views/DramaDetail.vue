@@ -416,27 +416,58 @@ const imagePickerOpen = ref(false)
 const imagePickerTarget = ref<'char' | 'scene' | 'cover'>('char')
 const imageAssets = ref<any[]>([])
 const loadingImages = ref(false)
+const imagePickerPage = ref(1)
+const hasMoreImages = ref(true)
+const loadingMoreImages = ref(false)
 
 // AI 生成状态
 const generatingCharImg = ref<string | null>(null)
 const generatingSceneImg = ref<string | null>(null)
 
-const openImagePicker = (target: 'char' | 'scene') => {
+const openImagePicker = (target: 'char' | 'scene' | 'cover') => {
   imagePickerTarget.value = target
   imagePickerOpen.value = true
+  imagePickerPage.value = 1
+  hasMoreImages.value = true
+  imageAssets.value = []
   loadImageAssets()
 }
 
-const loadImageAssets = async () => {
-  loadingImages.value = true
+const loadImageAssets = async (isLoadMore = false) => {
+  if (isLoadMore) {
+    loadingMoreImages.value = true
+  } else {
+    loadingImages.value = true
+  }
   try {
-    const res = await assetApi.page({ pageNum: 1, pageSize: 50 })
+    const res = await assetApi.page({ pageNum: imagePickerPage.value, pageSize: 20 })
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
-      imageAssets.value = list.filter((a: any) => a.type === 'image')
+      const imageList = list.filter((a: any) => a.type === 'image')
+      if (isLoadMore) {
+        imageAssets.value.push(...imageList)
+      } else {
+        imageAssets.value = imageList
+      }
+      // 判断是否还有更多
+      const total = res.data?.total || 0
+      hasMoreImages.value = imageAssets.value.length < total && imageList.length === 20
     }
   } catch (e) { console.error('Load images failed:', e) }
-  finally { loadingImages.value = false }
+  finally {
+    loadingImages.value = false
+    loadingMoreImages.value = false
+  }
+}
+
+// 滚动加载更多
+const onImagePickerScroll = (e: Event) => {
+  const target = e.target as HTMLElement
+  const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (scrollBottom < 50 && hasMoreImages.value && !loadingMoreImages.value) {
+    imagePickerPage.value++
+    loadImageAssets(true)
+  }
 }
 
 // 从存储中选择图片
@@ -1011,8 +1042,9 @@ const clearImageUrl = (target: 'char' | 'scene') => {
     <!-- ====== 从存储选择图片弹窗 ====== -->
     <a-modal v-model:open="imagePickerOpen"
       title="选择图片（素材库）" okText="" cancelText="关闭" width="600px" destroyOnClose
-      :body-style="{ maxHeight: '60vh', overflow: 'auto' }">
-      <div class="space-y-3">
+      :body-style="{ maxHeight: '60vh', overflow: 'auto', padding: '16px' }"
+      @scroll="onImagePickerScroll">
+      <div class="space-y-3" @scroll="onImagePickerScroll">
         <!-- Loading -->
         <div v-if="loadingImages" class="flex justify-center py-8"><a-spin tip="加载中..." /></div>
 
@@ -1033,11 +1065,19 @@ const clearImageUrl = (target: 'char' | 'scene') => {
               <span class="text-[9px] text-white/70 truncate drop-shadow">{{ img.filename }}</span>
             </div>
             <!-- 已选中标记 -->
-            <div v-if="(imagePickerTarget==='char' && charForm.imageUrl===img.fileUrl) || (imagePickerTarget==='scene' && sceneForm.imageUrl===img.fileUrl)"
+            <div v-if="(imagePickerTarget==='char' && charForm.imageUrl===img.fileUrl) || (imagePickerTarget==='scene' && sceneForm.imageUrl===img.fileUrl) || (imagePickerTarget==='cover' && store.currentDrama?.coverImage===img.fileUrl)"
               class="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#6366f1] flex items-center justify-center">
               <span style="font-size: 11px;" class="text-white">✓</span>
             </div>
           </div>
+        </div>
+
+        <!-- 加载更多 -->
+        <div v-if="loadingMoreImages" class="flex justify-center py-4">
+          <a-spin size="small" tip="加载更多..." />
+        </div>
+        <div v-else-if="!hasMoreImages && imageAssets.length > 0" class="text-center py-4 text-[#666] text-xs">
+          已加载全部 {{ imageAssets.length }} 张图片
         </div>
       </div>
     </a-modal>

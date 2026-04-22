@@ -17,7 +17,7 @@
 
 ## 项目状态 (2026-04-21)
 - **UPDATE.md 代码审查完成**: 33项优化任务（5 P0安全 + 8 P1功能 + 9 P2性能UX + 11 P3代码质量）
-- **已修复 14/33 项**: 第一批10项(SEC/PERF/FUNC) + BUG00030错误透传 + 第三批4项(P2配置/质量)
+- **已修复 16/33 项**: 第一批10项(SEC/PERF/FUNC) + BUG00030错误透传 + 第三批4项(P2配置/质量) + 第四批2项(UX分页+布局)
 - **FFmpeg路径策略更新**: application.yml 留空走系统PATH，Windows路径移到 application-dev.yml
 - **静态资源安全**: 新增 PathTraversalProtectionFilter 防路径遍历攻击
 - **前端日志清理**: 9处 console.log 全部改为 `import.meta.env.DEV` 条件限定
