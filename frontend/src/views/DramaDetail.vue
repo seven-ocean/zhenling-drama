@@ -441,18 +441,23 @@ const loadImageAssets = async (isLoadMore = false) => {
     loadingImages.value = true
   }
   try {
-    const res = await assetApi.page({ pageNum: imagePickerPage.value, pageSize: 20 })
+    // 添加 type: 'image' 参数让后端过滤，避免前端过滤导致分页问题
+    const res = await assetApi.page({ 
+      pageNum: imagePickerPage.value, 
+      pageSize: 20,
+      type: 'image'
+    })
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
-      const imageList = list.filter((a: any) => a.type === 'image')
+      // 后端已按type过滤，无需再次过滤
       if (isLoadMore) {
-        imageAssets.value.push(...imageList)
+        imageAssets.value.push(...list)
       } else {
-        imageAssets.value = imageList
+        imageAssets.value = list
       }
-      // 判断是否还有更多
+      // 判断是否还有更多：当前已加载数量 < 总数 且 本次返回数量等于pageSize
       const total = res.data?.total || 0
-      hasMoreImages.value = imageAssets.value.length < total && imageList.length === 20
+      hasMoreImages.value = imageAssets.value.length < total && list.length === 20
     }
   } catch (e) { console.error('Load images failed:', e) }
   finally {
@@ -1044,8 +1049,9 @@ const clearImageUrl = (target: 'char' | 'scene') => {
     <a-modal v-model:open="imagePickerOpen"
       title="选择图片（素材库）" okText="" cancelText="关闭" width="600px" destroyOnClose
       :body-style="{ padding: '16px', overflow: 'hidden' }">
+      <!-- 滚动容器：禁止 modal-body 滚动，自身负责滚动触发翻页 -->
       <div ref="imagePickerScrollRef"
-        style="max-height: calc(60vh - 20px); overflow-y: auto; padding: 4px;"
+        style="max-height: calc(60vh - 80px); overflow-y: auto; padding: 4px;"
         @scroll="onImagePickerScroll">
         <!-- Loading -->
         <div v-if="loadingImages" class="flex justify-center py-8"><a-spin tip="加载中..." /></div>

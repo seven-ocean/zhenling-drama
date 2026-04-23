@@ -43,11 +43,13 @@ const ossPersisted = ref(false)
 // 文件列表
 const files = ref<any[]>([])
 const loadingFiles = ref(false)
+const loadingMoreFiles = ref(false)
 const uploading = ref(false)
 const selectedType = ref('all')
 const pageNum = ref(1)
 const pageSize = ref(24)
 const fileTotal = ref(0)
+const hasMoreFiles = ref(true)
 
 const fileTypes = [
   { value: 'all', label: '全部' },
@@ -153,9 +155,20 @@ const loadStatus = async () => {
   }
 }
 
-// 加载文件列表
-const loadFiles = async () => {
-  loadingFiles.value = true
+// 加载文件列表（支持滚动分页）
+const loadFiles = async (isLoadMore = false) => {
+  // 防止重复加载
+  if (isLoadMore && loadingMoreFiles.value) return
+  if (!isLoadMore && loadingFiles.value) return
+
+  if (isLoadMore) {
+    loadingMoreFiles.value = true
+  } else {
+    loadingFiles.value = true
+    pageNum.value = 1
+    hasMoreFiles.value = true
+  }
+
   try {
     // 添加时间戳避免缓存
     const res = await assetApi.page({
@@ -165,20 +178,36 @@ const loadFiles = async () => {
     })
     if (res.code === 200) {
       const list = res.data?.records || res.data || []
-      files.value = list
-      fileTotal.value = res.data?.total || list.length
+      const total = res.data?.total || list.length
+      fileTotal.value = total
+
+      if (isLoadMore) {
+        files.value.push(...list)
+      } else {
+        files.value = list
+      }
+
+      // 判断是否还有更多
+      hasMoreFiles.value = files.value.length < total && list.length === pageSize.value
+      console.log(`[存储文件] 第${pageNum.value}页加载完成，本页${list.length}条，总计${files.value.length}/${total}条`)
     }
   } catch (e) {
     console.error('Load files failed:', e)
+    AMessage.error('加载文件失败，请重试')
   } finally {
     loadingFiles.value = false
+    loadingMoreFiles.value = false
   }
 }
 
-const onFilePageChange = (page: number, size: number) => {
-  pageNum.value = page
-  pageSize.value = size
-  loadFiles()
+// 滚动加载更多
+const onFilesScroll = (e: Event) => {
+  const target = e.target as HTMLElement
+  const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (scrollBottom < 80 && hasMoreFiles.value && !loadingMoreFiles.value && !loadingFiles.value) {
+    pageNum.value++
+    loadFiles(true)
+  }
 }
 
 // 根据文件类型判断素材类型
@@ -404,82 +433,78 @@ onMounted(() => {
         <a-empty description="暂无文件，点击上方按钮上传" />
       </div>
 
-      <!-- File Grid -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        <div v-for="item in filteredFiles" :key="item.id"
-          class="group bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/30 transition-all">
+      <!-- File Grid (滚动加载) -->
+      <div v-else class="max-h-[60vh] overflow-y-auto pr-1" @scroll="onFilesScroll">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div v-for="item in filteredFiles" :key="item.id"
+            class="group bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/30 transition-all">
 
-          <!-- ====== 图片：缩略图 + 点击放大预览 ====== -->
-          <div v-if="getRealFileType(item) === 'image'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
-               @click="openPreview(item)">
-            <img :src="item.fileUrl" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                 loading="lazy" />
-            <!-- 放大图标遮罩 -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
-              <EyeOutlined class="text-white opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all" style="font-size: 22px;" />
+            <!-- ====== 图片：缩略图 + 点击放大预览 ====== -->
+            <div v-if="getRealFileType(item) === 'image'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
+                 @click="openPreview(item)">
+              <img :src="item.fileUrl" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                   loading="lazy" />
+              <!-- 放大图标遮罩 -->
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center transition-all">
+                <EyeOutlined class="text-white opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all" style="font-size: 22px;" />
+              </div>
             </div>
-          </div>
 
-          <!-- ====== 视频：封面 + 播放图标 + 点击播放 ====== -->
-          <div v-else-if="getRealFileType(item) === 'video'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
-               @click="openPreview(item)">
-            <video :src="item.fileUrl" muted preload="metadata"
-                   class="w-full h-full object-cover" />
-            <!-- 播放按钮 -->
-            <div class="absolute inset-0 flex items-center justify-center">
-              <PlayCircleOutlined class="text-white/80 drop-shadow-lg group-hover:text-white group-hover:scale-110 transition-all"
-                                  style="font-size: 42px;" />
+            <!-- ====== 视频：封面 + 播放图标 + 点击播放 ====== -->
+            <div v-else-if="getRealFileType(item) === 'video'" class="aspect-video bg-[#242424] relative overflow-hidden cursor-pointer"
+                 @click="openPreview(item)">
+              <video :src="item.fileUrl" muted preload="metadata"
+                     class="w-full h-full object-cover" />
+              <!-- 播放按钮 -->
+              <div class="absolute inset-0 flex items-center justify-center">
+                <PlayCircleOutlined class="text-white/80 drop-shadow-lg group-hover:text-white group-hover:scale-110 transition-all"
+                                    style="font-size: 42px;" />
+              </div>
+              <!-- 时长标签 -->
+              <div v-if="item.duration" class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] text-white font-mono">
+                {{ Math.floor(item.duration) }}s
+              </div>
             </div>
-            <!-- 时长标签 -->
-            <div v-if="item.duration" class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] text-white font-mono">
-              {{ Math.floor(item.duration) }}s
+
+            <!-- ====== 音频：图标 + 点击播放 ====== -->
+            <div v-else-if="getRealFileType(item) === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer relative"
+                 @click="openPreview(item)">
+              <SoundOutlined class="text-[#6366f1] group-hover:scale-110 transition-transform" style="font-size: 48px;" />
+              <div v-if="item.duration" class="absolute bottom-2 right-2 text-[10px] text-[#888]">
+                {{ item.duration.toFixed(1) }}s
+              </div>
             </div>
-          </div>
 
-          <!-- ====== 音频：图标 + 点击播放 ====== -->
-          <div v-else-if="getRealFileType(item) === 'audio'" class="aspect-video bg-[#242424] flex items-center justify-center cursor-pointer relative"
-               @click="openPreview(item)">
-            <SoundOutlined class="text-[#6366f1] group-hover:scale-110 transition-transform" style="font-size: 48px;" />
-            <div v-if="item.duration" class="absolute bottom-2 right-2 text-[10px] text-[#888]">
-              {{ item.duration.toFixed(1) }}s
+            <!-- ====== 其他文件类型：显示图标（用真实类型判断） ====== -->
+            <div v-else class="aspect-video bg-[#242424] flex items-center justify-center">
+              <FileTextOutlined style="font-size: 32px; color: #404040;" />
+              <span class="ml-2 text-xs text-[#606060]">{{ item.filename?.split('.').pop()?.toUpperCase() || '' }}</span>
             </div>
-          </div>
 
-          <!-- ====== 其他文件类型：显示图标（用真实类型判断） ====== -->
-          <div v-else class="aspect-video bg-[#242424] flex items-center justify-center">
-            <FileTextOutlined style="font-size: 32px; color: #404040;" />
-            <span class="ml-2 text-xs text-[#606060]">{{ item.filename?.split('.').pop()?.toUpperCase() || '' }}</span>
-          </div>
-
-          <!-- Info -->
-          <div class="p-3">
-            <p class="text-xs font-medium text-[#e0e0e0] truncate" :title="item.filename">{{ item.filename }}</p>
-            <div class="flex items-center justify-between mt-2">
-              <span class="text-[10px] text-[#606060]">
-                {{ formatSize(item.fileSize) }} · {{ item.sourceType }}
-              </span>
-              <a-popconfirm title="确定删除该文件？" ok-text="确定" cancel-text="取消" @confirm="deleteFile(item.id)">
-                <a-button type="text" danger size="small" class="opacity-0 group-hover:opacity-100 !p-1">
-                  <template #icon><DeleteOutlined /></template>
-                </a-button>
-              </a-popconfirm>
+            <!-- Info -->
+            <div class="p-3">
+              <p class="text-xs font-medium text-[#e0e0e0] truncate" :title="item.filename">{{ item.filename }}</p>
+              <div class="flex items-center justify-between mt-2">
+                <span class="text-[10px] text-[#606060]">
+                  {{ formatSize(item.fileSize) }} · {{ item.sourceType }}
+                </span>
+                <a-popconfirm title="确定删除该文件？" ok-text="确定" cancel-text="取消" @confirm="deleteFile(item.id)">
+                  <a-button type="text" danger size="small" class="opacity-0 group-hover:opacity-100 !p-1">
+                    <template #icon><DeleteOutlined /></template>
+                  </a-button>
+                </a-popconfirm>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- File Pagination -->
-      <div v-if="fileTotal > pageSize" class="flex justify-center pt-4 pb-4">
-        <a-pagination
-          :current="pageNum"
-          :pageSize="pageSize"
-          :total="fileTotal"
-          :showSizeChanger="true"
-          size="small"
-          @change="onFilePageChange"
-          :page-size-options="['12', '24', '48', '96']"
-          class="!text-[#a0a0a0]"
-        />
+        <!-- 加载更多指示 -->
+        <div v-if="loadingMoreFiles" class="flex justify-center py-4">
+          <a-spin size="small" tip="加载更多..." />
+        </div>
+        <div v-else-if="!hasMoreFiles && filteredFiles.length > 0" class="text-center py-4 text-[#666] text-xs">
+          已加载全部 {{ filteredFiles.length }} 个文件
+        </div>
       </div>
     </div>
 

@@ -119,14 +119,13 @@ const ttsVoices = ref<{ value: string; label: string }[]>([
 const previewTTS = ref(false)
 const previewAudioUrl = ref('')
 
-// 加载分镜列表（用于选择要配音的分镜）
+// 加载分镜列表（用于选择要配音/生成视频的分镜）
 const loadStoryboardsForTTS = async () => {
   try {
     const res = await storyboardApi.list(dramaId.value, 1)
     if (res.code === 200) {
-      // 只加载有台词的分镜
-      const all = res.data || []
-      ttsStoryboards.value = all.filter((sb: any) => sb.dialogue && sb.dialogue.trim())
+      // 加载所有分镜，不限制必须有台词
+      ttsStoryboards.value = res.data || []
     }
   } catch (e) { console.error(e) }
 }
@@ -167,6 +166,24 @@ watch(ttsStoryboardId, (newVal) => {
 // 切换角色时自动带出该角色的专属音色
 watch(ttsCharacterId, (newVal) => {
   if (newVal) resolveVoiceFromCharacter(newVal)
+})
+
+// 监听 Tab 切换：切换到素材管理时，如果没有数据则重新加载
+watch(activeTab, (newTab) => {
+  if (newTab === 'assets' && assets.value.length === 0 && !assetsLoading.value) {
+    loadAssets(false)
+  }
+})
+
+// 监听 dramaId 变化：当剧集ID变化时重新加载所有数据
+watch(dramaId, (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    // 重置素材列表并重新加载
+    assets.value = []
+    assetsPage.value = 1
+    assetsHasMore.value = true
+    loadAssets(false)
+  }
 })
 
 const generateTTS = async () => {
@@ -270,29 +287,48 @@ const openImagePicker = async (target: ImagePickerTarget) => {
   imagePickerOpen.value = true
   imagePickerPage.value = 1
   imagePickerHasMore.value = true
+  imagePickerAssets.value = [] // 清空已有数据
   await loadPickerAssets(false)
 }
 
 /** 加载素材（支持分页+加载更多） */
 const loadPickerAssets = async (isLoadMore = false) => {
+  // 防止重复加载
+  if (isLoadMore && imagePickerLoadingMore.value) return
+  if (!isLoadMore && imagePickerLoading.value) return
+  
   if (isLoadMore) {
     imagePickerLoadingMore.value = true
   } else {
     imagePickerLoading.value = true
   }
   try {
-    const res = await assetApi.page({ dramaId: dramaId.value, pageNum: imagePickerPage.value, pageSize: 24, type: 'image' })
+    // 加载全部图片（不传 dramaId），确保能看到所有素材
+    const res = await assetApi.page({ 
+      pageNum: imagePickerPage.value, 
+      pageSize: 24, 
+      type: 'image' 
+    })
     if (res.code === 200) {
       const list = res.data?.records || []
+      const total = res.data?.total || 0
+      
       if (isLoadMore) {
         imagePickerAssets.value.push(...list)
       } else {
         imagePickerAssets.value = list
       }
-      const total = res.data?.total || 0
-      imagePickerHasMore.value = imagePickerAssets.value.length < total && list.length === 24
+      
+      // 判断是否还有更多：已加载数量 < 总数 且 本次返回数量等于pageSize
+      const hasMore = imagePickerAssets.value.length < total && list.length === 24
+      imagePickerHasMore.value = hasMore
+      
+      console.log(`[图片选择器] 第${imagePickerPage.value}页加载完成，本页${list.length}条，总计${imagePickerAssets.value.length}/${total}条，${hasMore ? '还有更多' : '已加载全部'}`)
     }
-  } catch (e) { console.error('Failed to load assets for picker:', e) }
+  } catch (e) { 
+    console.error('[图片选择器] 加载失败:', e)
+    AMessage.error('加载图片失败，请重试')
+  }
   finally {
     imagePickerLoading.value = false
     imagePickerLoadingMore.value = false
@@ -303,7 +339,8 @@ const loadPickerAssets = async (isLoadMore = false) => {
 const onPickerScroll = (e: Event) => {
   const target = e.target as HTMLElement
   const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
-  if (scrollBottom < 80 && imagePickerHasMore.value && !imagePickerLoadingMore.value) {
+  // 当距离底部小于80px时触发加载
+  if (scrollBottom < 80 && imagePickerHasMore.value && !imagePickerLoadingMore.value && !imagePickerLoading.value) {
     imagePickerPage.value++
     loadPickerAssets(true)
   }
@@ -659,6 +696,10 @@ const loadComposeRecords = async () => {
 // ====== 素材管理 ======
 const assets = ref<any[]>([])
 const assetsLoading = ref(false)
+const assetsLoadingMore = ref(false)
+const assetsPage = ref(1)
+const assetsHasMore = ref(true)
+const assetsTotal = ref(0)
 const uploadLoading = ref(false)
 const uploadProgress = ref(0)
 
@@ -668,7 +709,9 @@ const handleUpload = async ({ file }: any) => {
   try {
     const res = await assetApi.upload(file.originFileObj || file, dramaId.value)
     if (res.code === 200 && res.data) {
+      // 将新上传的素材插入到列表开头，并更新总数
       assets.value.unshift(res.data)
+      assetsTotal.value++
       AMessage.success(`上传成功: ${res.data.filename}`)
     } else {
       AMessage.error(res.message || '上传失败')
@@ -685,6 +728,7 @@ const deleteAsset = async (id: string) => {
   try {
     await assetApi.delete(id)
     assets.value = assets.value.filter((a: any) => a.id !== id)
+    assetsTotal.value = Math.max(0, assetsTotal.value - 1)
     AMessage.success('已删除')
   } catch (e: any) {
     AMessage.error(e?.message || '删除失败')
@@ -725,13 +769,66 @@ const loadVideos = async () => {
   finally { videosLoading.value = false }
 }
 
-const loadAssets = async () => {
-  assetsLoading.value = true
+/** 加载素材列表（支持分页） */
+const loadAssets = async (isLoadMore = false) => {
+  // dramaId 为空时不加载
+  if (!dramaId.value) {
+    console.log('[素材列表] dramaId 为空，跳过加载')
+    return
+  }
+  
+  // 防止重复加载
+  if (isLoadMore && assetsLoadingMore.value) return
+  if (!isLoadMore && assetsLoading.value) return
+  
+  if (isLoadMore) {
+    assetsLoadingMore.value = true
+  } else {
+    assetsLoading.value = true
+    assetsPage.value = 1
+    assetsHasMore.value = true
+  }
+  
   try {
-    const res = await assetApi.list(dramaId.value)
-    if (res.code === 200) assets.value = res.data || []
-  } catch (e) { console.error(e) }
-  finally { assetsLoading.value = false }
+    console.log(`[素材列表] 开始加载第${assetsPage.value}页`)
+    // 加载全部素材（不传 dramaId），与存储设置页面保持一致
+    const res = await assetApi.page({ 
+      pageNum: assetsPage.value, 
+      pageSize: 24
+    })
+    if (res.code === 200) {
+      const list = res.data?.records || []
+      const total = res.data?.total || 0
+      assetsTotal.value = total
+      
+      if (isLoadMore) {
+        assets.value.push(...list)
+      } else {
+        assets.value = list
+      }
+      
+      // 判断是否还有更多
+      assetsHasMore.value = assets.value.length < total && list.length === 24
+      console.log(`[素材列表] 第${assetsPage.value}页加载完成，本页${list.length}条，总计${assets.value.length}/${total}条`)
+    }
+  } catch (e) { 
+    console.error('[素材列表] 加载失败:', e)
+    AMessage.error('加载素材失败，请重试')
+  }
+  finally { 
+    assetsLoading.value = false 
+    assetsLoadingMore.value = false
+  }
+}
+
+/** 素材列表滚动加载更多 */
+const onAssetsScroll = (e: Event) => {
+  const target = e.target as HTMLElement
+  const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (scrollBottom < 80 && assetsHasMore.value && !assetsLoadingMore.value && !assetsLoading.value) {
+    assetsPage.value++
+    loadAssets(true)
+  }
 }
 
 // 定时轮询（5秒）
@@ -741,16 +838,20 @@ onMounted(async () => {
   // 安全防护：防止组件重复挂载导致多个并行定时器
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 
-  await Promise.all([loadAudios(), loadVideos(), loadAssets(), loadStoryboardsForTTS()])
-  // 加载角色列表（用于TTS关联）
-  try {
-    const charRes = await (await import('@/utils/request')).characterApi.list(dramaId.value)
-    if (charRes.code === 200) ttsCharacters.value = charRes.data || []
-  } catch (e) { console.error(e) }
-  // 加载视频AI配置（获取可用模型）
-  await loadVideoConfigs()
+  // 只在 dramaId 有效时加载数据
+  if (dramaId.value) {
+    await Promise.all([loadAudios(), loadVideos(), loadAssets(), loadStoryboardsForTTS()])
+    // 加载角色列表（用于TTS关联）
+    try {
+      const charRes = await (await import('@/utils/request')).characterApi.list(dramaId.value)
+      if (charRes.code === 200) ttsCharacters.value = charRes.data || []
+    } catch (e) { console.error(e) }
+    // 加载视频AI配置（获取可用模型）
+    await loadVideoConfigs()
+    await loadComposeRecords()
+  }
+  
   await checkFfmpeg()
-  await loadComposeRecords()
   pollTimer = setInterval(() => { pollVideos() }, 5000)
 
   // 检查查询参数（从工作台跳转过来）
@@ -1162,12 +1263,7 @@ const statusLabelMap: Record<string, string> = {
           <a-button
             type="primary"
             :loading="generatingVideo"
-            :disabled="
-              (videoGenerationMode === 'TEXT_TO_VIDEO' && !videoPrompt.trim()) ||
-              (videoGenerationMode === 'IMAGE_TO_VIDEO' && !videoImageUrl.trim()) ||
-              (videoGenerationMode === 'FIRST_LAST_FRAME' && (!firstFrameUrl.trim() || !lastFrameUrl.trim())) ||
-              (videoGenerationMode === 'SUBJECT_REFERENCE' && !subjectImageUrl.trim())
-            "
+            :disabled="!videoPrompt.trim()"
             @click="generateVideo"
           >
             <template #icon><VideoCameraOutlined /></template>
@@ -1252,48 +1348,62 @@ const statusLabelMap: Record<string, string> = {
       <!-- 素材网格 -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h4 class="text-xs sm:text-sm font-medium text-[#808080]">已上传素材 ({{ assets.length }})</h4>
-          <a-button size="small" type="text" :loading="assetsLoading" @click="loadAssets">
+          <h4 class="text-xs sm:text-sm font-medium text-[#808080]">已上传素材 ({{ assets.length }}{{ assetsTotal > 0 ? `/${assetsTotal}` : '' }})</h4>
+          <a-button size="small" type="text" :loading="assetsLoading" @click="() => loadAssets(false)">
             <template #icon><ReloadOutlined /></template> 刷新
           </a-button>
         </div>
         <a-spin :spinning="assetsLoading">
-          <div v-if="assets.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            <div v-for="asset in assets" :key="asset.id"
-              class="group relative bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/50 transition-all">
-              <!-- 缩略图 -->
-              <div class="aspect-square bg-[#242424] relative">
-                <img v-if="asset.type === 'image'" :src="asset.fileUrl" class="w-full h-full object-cover" />
-                <div v-else-if="asset.type === 'video'" class="w-full h-full flex items-center justify-center text-[#404040]">
-                  <VideoCameraOutlined style="font-size: 32px;" />
+          <!-- 滚动容器 -->
+          <div 
+            class="max-h-[60vh] overflow-y-auto pr-1" 
+            @scroll="onAssetsScroll"
+          >
+            <div v-if="assets.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div v-for="asset in assets" :key="asset.id"
+                class="group relative bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden hover:border-[#6366f1]/50 transition-all">
+                <!-- 缩略图 -->
+                <div class="aspect-square bg-[#242424] relative">
+                  <img v-if="asset.type === 'image'" :src="asset.fileUrl" class="w-full h-full object-cover" />
+                  <div v-else-if="asset.type === 'video'" class="w-full h-full flex items-center justify-center text-[#404040]">
+                    <VideoCameraOutlined style="font-size: 32px;" />
+                  </div>
+                  <div v-else-if="asset.type === 'audio'" class="w-full h-full flex items-center justify-center text-[#404040]">
+                    <SoundOutlined style="font-size: 32px;" />
+                  </div>
+                  <div v-else class="w-full h-full flex items-center justify-center text-[#404040]">
+                    <FileImageOutlined style="font-size: 28px;" />
+                  </div>
+                  <!-- 删除按钮 -->
+                  <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a-popconfirm title="确定删除？" ok-text="确定" cancel-text="取消" @confirm="deleteAsset(asset.id)">
+                      <a-button type="text" danger size="small" class="!p-1 !bg-black/50 !rounded-lg">
+                        <DeleteOutlined style="font-size: 12px;" />
+                      </a-button>
+                    </a-popconfirm>
+                  </div>
                 </div>
-                <div v-else-if="asset.type === 'audio'" class="w-full h-full flex items-center justify-center text-[#404040]">
-                  <SoundOutlined style="font-size: 32px;" />
-                </div>
-                <div v-else class="w-full h-full flex items-center justify-center text-[#404040]">
-                  <FileImageOutlined style="font-size: 28px;" />
-                </div>
-                <!-- 删除按钮 -->
-                <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <a-popconfirm title="确定删除？" ok-text="确定" cancel-text="取消" @confirm="deleteAsset(asset.id)">
-                    <a-button type="text" danger size="small" class="!p-1 !bg-black/50 !rounded-lg">
-                      <DeleteOutlined style="font-size: 12px;" />
-                    </a-button>
-                  </a-popconfirm>
-                </div>
-              </div>
-              <!-- 信息 -->
-              <div class="p-2">
-                <p class="text-[10px] xs:text-xs text-[#e0e0e0] truncate">{{ asset.filename }}</p>
-                <div class="flex items-center justify-between mt-0.5">
-                  <a-tag color="#333" class="!text-[#707070] !text-[9px] !py-0 !px-1">{{ asset.type }}</a-tag>
-                  <span class="text-[9px] text-[#505050]">{{ formatFileSize(asset.fileSize) }}</span>
+                <!-- 信息 -->
+                <div class="p-2">
+                  <p class="text-[10px] xs:text-xs text-[#e0e0e0] truncate">{{ asset.filename }}</p>
+                  <div class="flex items-center justify-between mt-0.5">
+                    <a-tag color="#333" class="!text-[#707070] !text-[9px] !py-0 !px-1">{{ asset.type }}</a-tag>
+                    <span class="text-[9px] text-[#505050]">{{ formatFileSize(asset.fileSize) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div v-else class="text-center py-12">
-            <a-empty description="暂无素材，拖拽文件到上方区域上传" />
+            <div v-else-if="!assetsLoading" class="text-center py-12">
+              <a-empty description="暂无素材，拖拽文件到上方区域上传" />
+            </div>
+            
+            <!-- 加载更多指示 -->
+            <div v-if="assetsLoadingMore" class="flex justify-center py-4">
+              <a-spin size="small" tip="加载更多..." />
+            </div>
+            <div v-else-if="!assetsHasMore && assets.length > 0" class="text-center py-4 text-[#666] text-xs">
+              已加载全部 {{ assets.length }} 个素材
+            </div>
           </div>
         </a-spin>
       </div>

@@ -581,22 +581,17 @@ onUnmounted(() => {
               <span v-if="shot.characterImageUrl" title="有角色图" class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">角色图</span>
               <span v-if="shot.gridImageUrl" title="有宫格图" class="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded">宫格图</span>
             </div>
-            <!-- 调试信息：显示图片URL状态 -->
-            <div class="mt-1 text-[8px] text-[#555]">
-              grid:{{ shot.gridImageUrl ? '有' : '无' }} | char:{{ shot.characterImageUrl ? '有' : '无' }} | scene:{{ shot.sceneImageUrl ? '有' : '无' }}
-            </div>
           </div>
-          <!-- 生成视频按钮 -->
+          <!-- 生成视频按钮：action字段直接可生成，图片仅作增强参考 -->
           <div class="mt-3 pt-2 border-t border-[#2a2a2a]">
             <a-button
               type="primary"
               size="small"
               block
-              :disabled="!shot.gridImageUrl && !shot.characterImageUrl && !shot.sceneImageUrl"
               @click.stop="goToVideoGeneration(shot)"
             >
               <template #icon><VideoCameraOutlined /></template>
-              {{ (!shot.gridImageUrl && !shot.characterImageUrl && !shot.sceneImageUrl) ? '无图无法生成' : '生成视频' }}
+              生成视频
             </a-button>
           </div>
         </div>
@@ -717,7 +712,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <p class="text-[10px] text-[#555] mt-1">💡 提示：先在「场景图」Tab 生成分镜图片，复制图片 URL 到此处生成视频</p>
+        <p class="text-[10px] text-[#555] mt-1">💡 提示：填写视频描述即可生成，图片仅为增强参考（可选）</p>
       </div>
 
       <!-- 视频记录列表 -->
