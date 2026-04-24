@@ -65,6 +65,7 @@ export const audioApi = {
   list: (dramaId: string, episodeNumber: number) =>
     api(`/audios/drama/${dramaId}/episode/${episodeNumber}`),
   listByDrama: (dramaId: string) => api(`/audios/drama/${dramaId}`),
+  listByStoryboard: (storyboardId: string) => api(`/audios/by-storyboard/${storyboardId}`),
   get: (id: string) => api(`/audios/${id}`),
   delete: (id: string) => api(`/audios/${id}/delete`, { method: 'POST' }),
   update: (id: string, data: any) => api(`/audios/${id}`, { method: 'POST', body: data }),

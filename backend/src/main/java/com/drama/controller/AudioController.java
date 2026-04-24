@@ -116,4 +116,13 @@ public class AudioController {
     public R<Audio> update(@PathVariable String id, @RequestBody Map<String, Object> data) {
         return R.ok(audioService.update(id, data));
     }
+
+    /**
+     * 按分镜ID查询已完成的配音列表
+     * 用于视频生成时自动匹配音频时长
+     */
+    @GetMapping("/by-storyboard/{storyboardId}")
+    public R<List<Audio>> listByStoryboard(@PathVariable String storyboardId) {
+        return R.ok(audioService.listByStoryboard(storyboardId));
+    }
 }
