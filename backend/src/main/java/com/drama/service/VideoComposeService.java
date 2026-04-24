@@ -52,13 +52,36 @@ public class VideoComposeService {
         /** ffprobe 可执行文件路径，留空则使用系统PATH中的 "ffprobe" */
         private String probePath = "";
 
-        /** 获取实际FFmpeg路径（带默认值） */
+        /** 获取实际FFmpeg路径（带默认值，支持相对路径解析） */
         public String getFfmpegPath() {
-            return (path != null && !path.isBlank()) ? path.trim() : "ffmpeg";
+            return resolvePath(path, "ffmpeg");
         }
-        /** 获取实际ffprobe路径（带默认值） */
+        /** 获取实际ffprobe路径（带默认值，支持相对路径解析） */
         public String getFfprobePath() {
-            return (probePath != null && !probePath.isBlank()) ? probePath.trim() : "ffprobe";
+            return resolvePath(probePath, "ffprobe");
+        }
+
+        /** 解析路径：如果是相对路径，则基于 user.dir 解析为绝对路径 */
+        private String resolvePath(String configuredPath, String defaultCmd) {
+            if (configuredPath == null || configuredPath.isBlank()) {
+                return defaultCmd;
+            }
+            String trimmed = configuredPath.trim();
+            // 如果已经是绝对路径，直接返回
+            if (isAbsolutePath(trimmed)) {
+                return trimmed;
+            }
+            // 相对路径：基于 user.dir 解析
+            String userDir = System.getProperty("user.dir");
+            java.nio.file.Path resolved = java.nio.file.Paths.get(userDir, trimmed);
+            return resolved.toAbsolutePath().toString();
+        }
+
+        /** 判断是否为绝对路径 */
+        private boolean isAbsolutePath(String path) {
+            // Windows: C:\ or D:\ or C:/ or D:/ etc.
+            // Unix/Linux/Mac: /path
+            return path.matches("^[a-zA-Z]:[\\\\/].*") || path.startsWith("/");
         }
     }
 
