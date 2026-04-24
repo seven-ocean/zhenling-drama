@@ -51,5 +51,5 @@ http:
 
 # ====== FFmpeg 配置（开发环境 - Windows）======
 ffmpeg:
-  path: "C:/Data/FFmpeg/ffmpeg-8.1-essentials_build/bin/ffmpeg.exe"
-  probe-path: "C:/Data/FFmpeg/ffmpeg-8.1-essentials_build/bin/ffprobe.exe"
+  path: "C:/Data/FFmpeg/ffmpeg-7.1-full_build/bin/ffmpeg.exe"
+  probe-path: "C:/Data/FFmpeg/ffmpeg-7.1-full_build/bin/ffprobe.exe"

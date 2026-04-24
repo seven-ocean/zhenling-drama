@@ -1,21 +1,38 @@
-# Build and dependency directories
-backend/target
-frontend/node_modules
+# ===== 构建产物 & 依赖 =====
+backend/target/
+frontend/node_modules/
+frontend/dist/
 
-# Temporary directories
-tmp
+# ===== 运行时数据（媒体文件、合成输出、OSS配置等）=====
+data/
+*.mp4
+*.ass
+*.wav
+*.mp3
+*.aac
 
-# IDE files
+# ===== lock 文件（不提交，避免跨环境冲突）=====
+package-lock.json
+frontend/package-lock.json
+backend/package-lock.json
+
+# ===== IDE & 工具目录 =====
 .idea/
+.vscode/
+.workbuddy/
 
-# OS files
+# ===== 临时目录 =====
+tmp/
+temp/
+
+# ===== 系统文件 =====
 .DS_Store
 Thumbs.db
 
-# Log files
+# ===== 日志 =====
 *.log
 
-# Environment files
+# ===== 环境变量 =====
 .env
 .env.local
 .env.*.local
