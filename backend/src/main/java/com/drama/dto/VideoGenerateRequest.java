@@ -45,4 +45,10 @@ public class VideoGenerateRequest {
 
     /** 模型名称（为空则从 AI 配置动态读取） */
     private String model;
+
+    /** 视频时长（秒），默认 6，可选 6 或 10 */
+    private Integer duration = 6;
+
+    /** 视频分辨率，默认 768P，可选 512P / 768P / 1080P */
+    private String resolution = "768P";
 }
