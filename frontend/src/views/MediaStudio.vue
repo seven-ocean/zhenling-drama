@@ -257,6 +257,7 @@ const videoProviders = [
 ]
 
 // 模型定义（按厂商分类，包含能力限制）
+// 注意：value 必须是 MiniMax API 支持的有效模型名称
 const videoModelsConfig: Record<string, Array<{
   value: string
   label: string
@@ -284,19 +285,11 @@ const videoModelsConfig: Record<string, Array<{
     },
     {
       value: 'MiniMax-Hailuo-02',
-      label: '海螺 02（标准版）',
+      label: '海螺 02（512P低价版）',
       modes: ['TEXT_TO_VIDEO', 'IMAGE_TO_VIDEO'],
-      resolutions: ['768P', '1080P', '512P'],
+      resolutions: ['512P', '768P', '1080P'],
       durations: [6, 10],
-      desc: '支持文生视频和图生视频，包含512P低价选项',
-    },
-    {
-      value: 'MiniMax-Hailuo-02-512P',
-      label: '海螺 02-512P（低价版）',
-      modes: ['IMAGE_TO_VIDEO'], // 512P版仅支持图生视频
-      resolutions: ['512P'],
-      durations: [6, 10],
-      desc: '仅支持图生视频，512P分辨率，价格最低',
+      desc: '支持512P/768P/1080P，512P价格最低',
     },
   ],
 }
@@ -407,11 +400,6 @@ const videoPrice = computed(() => {
       if (resolution === '768P') return 4.00
       return 4.00 // 10s 不支持 1080P，按 768P 算
     }
-  }
-
-  // MiniMax-Hailuo-02-512P 低价版
-  if (model.includes('Hailuo-02-512P')) {
-    return duration === 6 ? 0.60 : 1.00
   }
 
   // 默认价格
