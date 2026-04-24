@@ -5,8 +5,8 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: ${MYSQL_PASSWORD:root}
+    username: zhenling_drama
+    password: ${MYSQL_PASSWORD:RiStdbw7XAirFbEK}
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
@@ -51,5 +51,5 @@ http:
 
 # ====== FFmpeg 配置（开发环境 - Windows）======
 ffmpeg:
-  path: "C:/Data/FFmpeg/ffmpeg-7.1-full_build/bin/ffmpeg.exe"
-  probe-path: "C:/Data/FFmpeg/ffmpeg-7.1-full_build/bin/ffprobe.exe"
+  path: "backend/ffmpeg/bin/ffmpeg.exe"
+  probe-path: "backend/ffmpeg/bin/ffprobe.exe"

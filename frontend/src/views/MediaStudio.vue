@@ -1004,7 +1004,7 @@ const statusLabelMap: Record<string, string> = {
                 v-for="sb in ttsStoryboards"
                 :key="sb.id"
                 :value="sb.id"
-              >#{{ sb.shotNumber }} {{ sb.characterName || '?' }} · {{ (sb.dialogue || '').substring(0, 28) }}{{ (sb.dialogue || '').length > 28 ? '...' : '' }}</a-select-option>
+              >{{ sb.shotNumber }} {{ (ttsCharacters.find((c: any) => c.id === sb.characterId)?.name || sb.characterName || '未知角色') }} · {{ sb.dialogue ? sb.dialogue.substring(0, 28) + (sb.dialogue.length > 28 ? '...' : '') : '暂无' }}</a-select-option>
             </a-select>
             <p v-if="!ttsStoryboards.length && !audiosLoading" class="text-[10px] text-[#555] mt-1.5 flex items-center gap-1">
               <RobotOutlined /> 暂无分镜数据，请先在「剧集详情 → 分镜Tab」中 AI 拆解剧本
