@@ -285,11 +285,19 @@ const videoModelsConfig: Record<string, Array<{
     },
     {
       value: 'MiniMax-Hailuo-02',
-      label: '海螺 02（512P低价版）',
-      modes: ['TEXT_TO_VIDEO', 'IMAGE_TO_VIDEO'],
-      resolutions: ['512P', '768P', '1080P'],
+      label: '海螺 02（多模式版）',
+      modes: ['TEXT_TO_VIDEO', 'IMAGE_TO_VIDEO', 'FIRST_LAST_FRAME'],
+      resolutions: ['512P', '768P', '1080P'], // 首尾帧模式不支持512P
       durations: [6, 10],
-      desc: '支持512P/768P/1080P，512P价格最低',
+      desc: '支持文生/图生/首尾帧，512P价格最低',
+    },
+    {
+      value: 'S2V-01',
+      label: 'S2V-01（主体参考）',
+      modes: ['SUBJECT_REFERENCE'], // 仅支持主体参考模式
+      resolutions: ['720P'], // S2V-01 仅支持720P
+      durations: [6], // S2V-01 仅支持6秒
+      desc: '基于参考人物生成视频，保持角色一致性',
     },
   ],
 }
@@ -309,6 +317,8 @@ const videoGenerationMode = ref('IMAGE_TO_VIDEO')
 const allVideoModes = [
   { value: 'TEXT_TO_VIDEO', label: '📝 文生视频', desc: '根据文本描述直接生成视频' },
   { value: 'IMAGE_TO_VIDEO', label: '🖼️ 图生视频', desc: '基于图片+文本描述生成视频' },
+  { value: 'FIRST_LAST_FRAME', label: '🎬 首尾帧视频', desc: '使用首帧和尾帧图片生成过渡视频' },
+  { value: 'SUBJECT_REFERENCE', label: '👤 主体参考', desc: '基于参考人物生成视频（S2V-01）' },
 ]
 
 // 根据当前模型过滤可用的生成模式
@@ -328,9 +338,11 @@ const videoResolutionOptions = computed(() => {
   const config = currentModelConfig.value
   const resolutions = config?.resolutions || ['768P']
   const is10s = videoDuration.value === 10
+  // 首尾帧模式不支持 512P 分辨率
+  const isFirstLastFrame = videoGenerationMode.value === 'FIRST_LAST_FRAME'
 
   return [
-    { value: '512P', label: '512P', disabled: !resolutions.includes('512P') },
+    { value: '512P', label: '512P', disabled: !resolutions.includes('512P') || isFirstLastFrame },
     { value: '768P', label: '768P', disabled: !resolutions.includes('768P') },
     { value: '1080P', label: '1080P', disabled: !resolutions.includes('1080P') || is10s },
   ]
@@ -348,6 +360,17 @@ watch(selectedVideoModel, (newModel) => {
     if (!config.resolutions.includes(videoResolution.value)) {
       videoResolution.value = config.resolutions[0]
     }
+    // 如果当前时长不被支持，切换到第一个支持的时长
+    if (!config.durations.includes(videoDuration.value)) {
+      videoDuration.value = config.durations[0]
+    }
+  }
+})
+
+// 监听模式变化，首尾帧模式不支持512P，自动切换到768P
+watch(videoGenerationMode, (newMode) => {
+  if (newMode === 'FIRST_LAST_FRAME' && videoResolution.value === '512P') {
+    videoResolution.value = '768P'
   }
 })
 
@@ -400,6 +423,11 @@ const videoPrice = computed(() => {
       if (resolution === '768P') return 4.00
       return 4.00 // 10s 不支持 1080P，按 768P 算
     }
+  }
+
+  // S2V-01 主体参考模型价格（仅支持720P 6秒）
+  if (model === 'S2V-01') {
+    return 2.00 // S2V-01 固定价格
   }
 
   // 默认价格
@@ -1370,6 +1398,62 @@ const statusLabelMap: Record<string, string> = {
           </a-button>
         </div>
 
+        <!-- 首尾帧视频：首帧和尾帧图片选择 -->
+        <div v-if="videoGenerationMode === 'FIRST_LAST_FRAME'" class="mb-4">
+          <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">首帧图片 <span class="text-[#666]">（起始画面）</span></label>
+          <div v-if="pickedFirstFrame" class="flex items-center gap-3 p-2 bg-[#0f0d14] border border-[#2a2238] rounded-xl mb-3">
+            <img :src="pickedFirstFrame.url" class="w-16 h-16 object-cover rounded-lg shrink-0 border border-[#333]" />
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-[#e0e0e0] truncate">{{ pickedFirstFrame.filename }}</p>
+            </div>
+            <a-button type="text" danger size="small" @click="clearPickedImage('firstFrame')">
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
+          <a-button v-else block size="large" class="!border-dashed !h-14 mb-3" @click="openImagePicker('firstFrame')">
+            <template #icon><FileImageOutlined /></template> 选择首帧图片
+          </a-button>
+
+          <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">尾帧图片 <span class="text-[#666]">（结束画面）</span></label>
+          <div v-if="pickedLastFrame" class="flex items-center gap-3 p-2 bg-[#0f0d14] border border-[#2a2238] rounded-xl">
+            <img :src="pickedLastFrame.url" class="w-16 h-16 object-cover rounded-lg shrink-0 border border-[#333]" />
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-[#e0e0e0] truncate">{{ pickedLastFrame.filename }}</p>
+            </div>
+            <a-button type="text" danger size="small" @click="clearPickedImage('lastFrame')">
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
+          <a-button v-else block size="large" class="!border-dashed !h-14" @click="openImagePicker('lastFrame')">
+            <template #icon><FileImageOutlined /></template> 选择尾帧图片
+          </a-button>
+
+          <p class="text-[9px] text-orange-400 mt-2">
+            ⚠️ 首尾帧模式不支持 512P 分辨率，视频将基于首帧图片尺寸生成
+          </p>
+        </div>
+
+        <!-- 主体参考视频：参考人物图片选择 -->
+        <div v-if="videoGenerationMode === 'SUBJECT_REFERENCE'" class="mb-4">
+          <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">参考人物图片 <span class="text-[#666]">（用于保持角色一致性）</span></label>
+          <div v-if="pickedSubjectImage" class="flex items-center gap-3 p-2 bg-[#0f0d14] border border-[#2a2238] rounded-xl">
+            <img :src="pickedSubjectImage.url" class="w-16 h-16 object-cover rounded-lg shrink-0 border border-[#333]" />
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-[#e0e0e0] truncate">{{ pickedSubjectImage.filename }}</p>
+            </div>
+            <a-button type="text" danger size="small" @click="clearPickedImage('subjectImage')">
+              <template #icon><DeleteOutlined /></template>
+            </a-button>
+          </div>
+          <a-button v-else block size="large" class="!border-dashed !h-14" @click="openImagePicker('subjectImage')">
+            <template #icon><FileImageOutlined /></template> 选择参考人物图片
+          </a-button>
+
+          <p class="text-[9px] text-[#555] mt-2">
+            S2V-01 模型会根据参考人物生成视频，保持角色外观一致性
+          </p>
+        </div>
+
         <!-- 视频时长选择 -->
         <div class="mb-4">
           <label class="block text-xs sm:text-sm text-[#a0a0a0] mb-1.5">
@@ -1378,8 +1462,11 @@ const statusLabelMap: Record<string, string> = {
           </label>
           <a-radio-group v-model:value="videoDuration" size="small">
             <a-radio-button :value="6">6秒</a-radio-button>
-            <a-radio-button :value="10">10秒</a-radio-button>
+            <a-radio-button :value="10" :disabled="!currentModelConfig?.durations?.includes(10)">10秒</a-radio-button>
           </a-radio-group>
+          <p v-if="!currentModelConfig?.durations?.includes(10)" class="text-[9px] text-orange-400 mt-1">
+            ⚠️ {{ currentModelConfig?.label }} 仅支持 6 秒视频
+          </p>
         </div>
 
         <!-- 视频分辨率选择 -->
@@ -1429,7 +1516,12 @@ const statusLabelMap: Record<string, string> = {
                   <p>当前配置价格明细：</p>
                   <p>厂商：MiniMax</p>
                   <p>模型：{{ currentModelConfig?.label || selectedVideoModel }}</p>
-                  <p>模式：{{ videoGenerationMode === 'TEXT_TO_VIDEO' ? '文生视频' : '图生视频' }}</p>
+                  <p>模式：{{
+                    videoGenerationMode === 'TEXT_TO_VIDEO' ? '文生视频' :
+                    videoGenerationMode === 'IMAGE_TO_VIDEO' ? '图生视频' :
+                    videoGenerationMode === 'FIRST_LAST_FRAME' ? '首尾帧视频' :
+                    videoGenerationMode === 'SUBJECT_REFERENCE' ? '主体参考' : '未知'
+                  }}</p>
                   <p>时长：{{ videoDuration }}秒</p>
                   <p>分辨率：{{ videoResolution }}</p>
                   <p class="mt-1 text-[#aaa]">价格仅供参考，以实际扣费为准</p>
