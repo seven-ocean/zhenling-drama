@@ -156,17 +156,27 @@ public class AiServiceFactory {
     public String generateVideoMultiMode(String provider, String mode, String prompt,
                                          String imageUrl, String firstFrameUrl, String lastFrameUrl,
                                          String subjectImageUrl, String model) {
+        return generateVideoMultiMode(provider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model, 6, "768P");
+    }
+
+    /**
+     * 视频生成（多模式支持，带扩展参数）
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     */
+    public String generateVideoMultiMode(String provider, String mode, String prompt,
+                                         String imageUrl, String firstFrameUrl, String lastFrameUrl,
+                                         String subjectImageUrl, String model, Integer duration, String resolution) {
         // 目前只有 MiniMax 支持多模式
         if ("minimax".equalsIgnoreCase(provider)) {
             com.drama.service.adapter.MiniMaxAdapter miniMaxAdapter =
                     (com.drama.service.adapter.MiniMaxAdapter) getAdapter("minimax");
-            return miniMaxAdapter.generateVideoMultiMode(mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model);
+            return miniMaxAdapter.generateVideoMultiMode(mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model, duration, resolution);
         }
         // 其他厂商使用基础版（图生视频）
         AiAdapter adapter = getAdapter(provider);
         if ("TEXT_TO_VIDEO".equals(mode)) {
             // 文生视频：传入空图片，让适配器处理
-            return adapter.generateVideo("", model);
+            return adapter.generateVideo("", prompt, model, duration, resolution);
         }
         // 其他模式默认使用图生视频
         String refImage = imageUrl;
@@ -176,7 +186,7 @@ public class AiServiceFactory {
         if (refImage == null || refImage.isEmpty()) {
             refImage = subjectImageUrl;
         }
-        return adapter.generateVideo(refImage, model);
+        return adapter.generateVideo(refImage, prompt, model, duration, resolution);
     }
 
     /**

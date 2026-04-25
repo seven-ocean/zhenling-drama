@@ -52,6 +52,20 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
                         String mode, String prompt,
                         String imageUrl, String firstFrameUrl, String lastFrameUrl, String subjectImageUrl,
                         String provider, String model) {
+        return generate(dramaId, episodeNumber, storyboardId, mode, prompt,
+                imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl,
+                provider, model, 6, "768P");
+    }
+
+    /**
+     * 生成视频并保存记录（支持多模式，自动注册任务日志）- 带扩展参数
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     */
+    @Transactional
+    public Video generate(String dramaId, int episodeNumber, String storyboardId,
+                        String mode, String prompt,
+                        String imageUrl, String firstFrameUrl, String lastFrameUrl, String subjectImageUrl,
+                        String provider, String model, Integer duration, String resolution) {
         // 验证必填项
         if ("TEXT_TO_VIDEO".equals(mode)) {
             if (prompt == null || prompt.isEmpty()) {
@@ -92,9 +106,9 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
         log.info("Generating video: mode={}, provider={}, model={}", mode, actualProvider, actualModel);
 
         try {
-            // 调用AI生成视频（使用多模式接口）
+            // 调用AI生成视频（使用多模式接口，带扩展参数）
             String videoResult = aiServiceFactory.generateVideoMultiMode(
-                    actualProvider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, actualModel);
+                    actualProvider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, actualModel, duration, resolution);
 
             Video video = new Video();
             video.setId(IdUtils.randomId());
