@@ -286,6 +286,12 @@ public class MiniMaxAdapter implements AiAdapter {
 
     @Override
     public String generateVideo(String imageUrl, String model) {
+        // 调用新方法，使用默认值
+        return generateVideo(imageUrl, null, model, 6, "768P");
+    }
+
+    @Override
+    public String generateVideo(String imageUrl, String prompt, String model, Integer duration, String resolution) {
         if (!isConfigured()) throw new AiApiException(-1, "", "MiniMax 视频生成适配器未配置", "视频生成");
 
         try {
@@ -296,23 +302,38 @@ public class MiniMaxAdapter implements AiAdapter {
                     model
             );
 
+            // 参数校验与默认值
+            int useDuration = (duration != null && (duration == 6 || duration == 10)) ? duration : 6;
+            String useResolution = (resolution != null && !resolution.isEmpty()) ? resolution : "768P";
+
+            // 根据模型能力校验参数
+            if (useModel.contains("T2V-01") && useDuration == 10) {
+                useDuration = 6; // T2V-01 不支持 10s
+            }
+            if (useDuration == 10 && "1080P".equals(useResolution)) {
+                useResolution = "768P"; // 10s 视频不支持 1080P
+            }
+
             StringBuilder body = new StringBuilder();
             body.append("{");
             body.append("\"model\": \"").append(useModel).append("\", ");
-            body.append("\"duration\": 6, ");
-            body.append("\"resolution\": \"1080P\", ");   // ✅ 官方必填参数
+            body.append("\"duration\": ").append(useDuration).append(", ");
+            body.append("\"resolution\": \"").append(useResolution).append("\", ");
+
+            // 使用用户提供的 prompt 或默认 prompt
+            String usePrompt = (prompt != null && !prompt.isEmpty()) ? prompt : "[镜头缓慢推进] A cinematic video clip with smooth motion";
 
             if (imageUrl != null && !imageUrl.isEmpty()) {
                 // 图生视频模式：使用官方正确的参数名 first_frame_image
-                body.append("\"prompt\": \"[镜头缓慢推进] A cinematic video clip with smooth motion based on the reference image\", ");
+                body.append("\"prompt\": ").append(objectMapper.writeValueAsString(usePrompt)).append(", ");
                 body.append("\"first_frame_image\": ").append(objectMapper.writeValueAsString(imageUrl));
             } else {
                 // 文生视频模式
-                body.append("\"prompt\": \"[镜头缓慢推进] A short cinematic video clip with smooth camera motion and high quality visual effects\"");
+                body.append("\"prompt\": ").append(objectMapper.writeValueAsString(usePrompt));
             }
             body.append("}");
 
-            log.info("[MiniMax] Video generation: model={}", useModel);
+            log.info("[MiniMax] Video generation: model={}, duration={}, resolution={}", useModel, useDuration, useResolution);
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST,
                     new HttpEntity<>(body.toString(), authHeaders()),
@@ -609,6 +630,23 @@ public class MiniMaxAdapter implements AiAdapter {
             String lastFrameUrl,
             String subjectImageUrl,
             String model) {
+        return generateVideoMultiMode(mode, prompt, referenceImageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model, 6, "768P");
+    }
+
+    /**
+     * 多模式视频生成（带扩展参数）
+     * 支持：TEXT_TO_VIDEO / IMAGE_TO_VIDEO / FIRST_LAST_FRAME / SUBJECT_REFERENCE
+     */
+    public String generateVideoMultiMode(
+            String mode,
+            String prompt,
+            String referenceImageUrl,
+            String firstFrameUrl,
+            String lastFrameUrl,
+            String subjectImageUrl,
+            String model,
+            Integer duration,
+            String resolution) {
         if (!isConfigured()) throw new AiApiException(-1, "", "MiniMax 视频生成适配器未配置", "视频生成(多模式)");
 
         try {
@@ -616,6 +654,18 @@ public class MiniMaxAdapter implements AiAdapter {
 
             // 按模式自动选模型（用户传了则覆盖）
             String useModel = resolveVideoModel(mode, model);
+
+            // 参数校验与默认值
+            int useDuration = (duration != null && (duration == 6 || duration == 10)) ? duration : 6;
+            String useResolution = (resolution != null && !resolution.isEmpty()) ? resolution : "768P";
+
+            // 根据模型能力校验参数
+            if (useModel.contains("T2V-01") && useDuration == 10) {
+                useDuration = 6; // T2V-01 不支持 10s
+            }
+            if (useDuration == 10 && "1080P".equals(useResolution)) {
+                useResolution = "768P"; // 10s 视频不支持 1080P
+            }
 
             // Prompt 处理：空值警告+降级
             String usePrompt = (prompt != null && !prompt.isEmpty())
@@ -632,8 +682,8 @@ public class MiniMaxAdapter implements AiAdapter {
             java.util.Map<String, Object> requestBody = new java.util.HashMap<>();
             requestBody.put("model", useModel);
             requestBody.put("prompt", usePrompt);
-            requestBody.put("duration", 6);          // ✅ 官方必填参数
-            requestBody.put("resolution", "1080P");  // 🔧 【新增】官方必填！缺省可能导致API报错
+            requestBody.put("duration", useDuration);
+            requestBody.put("resolution", useResolution);
 
             // 根据模式添加不同参数（⚠️ 参数名必须与官方文档完全一致）
             switch (mode) {
@@ -684,13 +734,13 @@ public class MiniMaxAdapter implements AiAdapter {
 
                 case "TEXT_TO_VIDEO":
                 default:
-                    log.info("[MiniMax] Text-to-Video mode: model={}, resolution=1080P", useModel);
+                    log.info("[MiniMax] Text-to-Video mode: model={}, duration={}, resolution={}", useModel, useDuration, useResolution);
                     break;
             }
 
             String bodyJson = objectMapper.writeValueAsString(requestBody);
-            log.info("[MiniMax] Video generation request: mode={}, model={}, promptLen={}, body={}",
-                    mode, useModel, usePrompt.length(), bodyJson);
+            log.info("[MiniMax] Video generation request: mode={}, model={}, duration={}, resolution={}, promptLen={}",
+                    mode, useModel, useDuration, useResolution, usePrompt.length());
 
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST,

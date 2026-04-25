@@ -41,6 +41,8 @@ public class VideoController {
         }
         // 默认值兜底
         String mode = request.getMode() != null ? request.getMode() : "IMAGE_TO_VIDEO";
+        Integer duration = request.getDuration() != null ? request.getDuration() : 6;
+        String resolution = request.getResolution() != null ? request.getResolution() : "768P";
         return R.ok(videoService.generate(
                 request.getDramaId(),
                 request.getEpisodeNumber(),
@@ -52,7 +54,9 @@ public class VideoController {
                 request.getLastFrameUrl(),
                 request.getSubjectImageUrl(),
                 request.getProvider(),
-                request.getModel()
+                request.getModel(),
+                duration,
+                resolution
         ));
     }
 

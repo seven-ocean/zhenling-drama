@@ -50,7 +50,7 @@ public class FileStorageService {
         }
 
         String filename = file.getOriginalFilename();
-        String ext =getExtension(filename);
+        String ext = getExtension(filename);
         String newFilename = UUID.randomUUID().toString().replace("-", "") + ext;
         String datePath = LocalDateTime.now().format(DATE_FORMAT);
         String relativePath = ossProps.getBasePath() + "/" + datePath + "/" + newFilename;
@@ -58,13 +58,21 @@ public class FileStorageService {
         long fileSize = file.getSize();
         String mimeType = file.getContentType();
 
+        // 先将文件读取到字节数组，避免输入流被多次读取的问题
+        byte[] fileBytes;
+        try {
+            fileBytes = file.getBytes();
+        } catch (IOException e) {
+            log.error("Failed to read file bytes: {}", e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, "文件读取失败");
+        }
+
         // 图片尺寸
         Integer width = null;
         Integer height = null;
         if (mimeType != null && mimeType.startsWith("image/")) {
             try {
-                // 先保存到临时文件获取尺寸
-                java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(file.getInputStream());
+                java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(new ByteArrayInputStream(fileBytes));
                 if (image != null) {
                     width = image.getWidth();
                     height = image.getHeight();
@@ -79,7 +87,7 @@ public class FileStorageService {
 
         if (ossProps.isEnabled()) {
             // 使用 OSS 存储
-            filePath = uploadToOss(file, datePath, newFilename);
+            filePath = uploadBytesToOss(fileBytes, datePath, newFilename, mimeType);
             if (StringUtils.hasText(ossProps.getCustomDomain())) {
                 finalUrl = "https://" + ossProps.getCustomDomain() + "/" + relativePath;
             } else {
@@ -89,7 +97,7 @@ public class FileStorageService {
             }
         } else {
             // 使用本地文件系统
-            filePath = saveToLocal(file, datePath, newFilename);
+            filePath = saveBytesToLocal(fileBytes, datePath, newFilename);
             finalUrl = "/api/v1/assets/download/" + relativePath;
         }
 
