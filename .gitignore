@@ -36,3 +36,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# ===== 排除目录（不纳入版本管理）=====
+.arts/
+.jlsp/

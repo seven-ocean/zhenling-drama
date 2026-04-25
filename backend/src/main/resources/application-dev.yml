@@ -4,9 +4,9 @@ server:
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://172.16.100.2:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: zhenling_drama
-    password: ${MYSQL_PASSWORD:RiStdbw7XAirFbEK}
+    password: ${MYSQL_PASSWORD:zhenling_drama}
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
