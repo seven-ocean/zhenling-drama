@@ -6,7 +6,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: zhenling_drama
-    password: ${MYSQL_PASSWORD}
+    password: zhenling_drama
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
