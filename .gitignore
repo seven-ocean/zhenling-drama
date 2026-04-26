@@ -40,3 +40,18 @@ Thumbs.db
 # ===== 排除目录（不纳入版本管理）=====
 .arts/
 .jlsp/
+
+# ===== 本地文档（不纳入版本管理）=====
+daily-record.md
+operation-manual.md
+product-manual.md
+test-report.md
+TEST.md
+UPDATE.md
+
+# ===== Windows FFmpeg（Linux 用系统 FFmpeg）=====
+backend/ffmpeg/
+README.md
+
+# ===== 示例/测试数据文件 =====
+backend/jq/
