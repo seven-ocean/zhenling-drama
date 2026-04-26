@@ -43,10 +43,10 @@ CREATE TABLE `ai_configs`  (
 -- ----------------------------
 -- Records of ai_configs
 -- ----------------------------
-INSERT INTO `ai_configs` VALUES ('mm-image-01', 'minimax', 'image', 'https://api.minimaxi.com/v1', 'sk-api-mEukL7AaKs0oT91kbgn24RCWqztejVZ-6saBzLjjzZACpGqCg8MHcGBhQFMR-6B4hgTSJ11IoolibWYSShKbDoybVDsmkzDG9peIz8A9AkNZIp5RWa2gGu8', 'image-01', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-15 00:25:42', 0.00050000, 'MiniMax 图片生成模型 image-01。支持文生图和图生图，输出 URL 有效期24小时。可设置宽高比(16:9/1:1等)和尺寸(512~2048px)。');
-INSERT INTO `ai_configs` VALUES ('mm-text-m25', 'minimax', 'text', 'https://api.minimaxi.com/v1', 'sk-api-mEukL7AaKs0oT91kbgn24RCWqztejVZ-6saBzLjjzZACpGqCg8MHcGBhQFMR-6B4hgTSJ11IoolibWYSShKbDoybVDsmkzDG9peIz8A9AkNZIp5RWa2gGu8', 'MiniMax-M2.5', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-16 16:21:32', 0.00010000, 'MiniMax 文本模型 M2.5，用于角色/场景描述生成、分镜AI拆解。支持 OpenAI 兼容格式。');
-INSERT INTO `ai_configs` VALUES ('mm-tts-speech02hd', 'minimax', 'tts', 'https://api.minimaxi.com/v1', 'sk-api-mEukL7AaKs0oT91kbgn24RCWqztejVZ-6saBzLjjzZACpGqCg8MHcGBhQFMR-6B4hgTSJ11IoolibWYSShKbDoybVDsmkzDG9peIz8A9AkNZIp5RWa2gGu8', 'speech-02-hd', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-15 00:25:42', 0.00020000, 'MiniMax 语音合成 speech-02-hd 高清版。同步接口，返回音频URL或Hex数据。支持语速/音量/音高调节，默认音色 female-tianmei。单次最长10000字符。');
-INSERT INTO `ai_configs` VALUES ('mm-video-hailuo23', 'minimax', 'video', 'https://api.minimaxi.com/v1', 'sk-api-mEukL7AaKs0oT91kbgn24RCWqztejVZ-6saBzLjjzZACpGqCg8MHcGBhQFMR-6B4hgTSJ11IoolibWYSShKbDoybVDsmkzDG9peIz8A9AkNZIp5RWa2gGu8', '', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-24 15:41:39', 0.60000000, 'MiniMax 海螺视频模型 Hailuo 2.3（最新旗舰）。异步任务模式：创建→轮询状态→下载。支持 6s/10s 视频、1080P 分辨率、15种运镜指令([推进][拉远][左移]等)。');
+INSERT INTO `ai_configs` VALUES ('mm-image-01', 'minimax', 'image', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', 'image-01', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-15 00:25:42', 0.00050000, 'MiniMax 图片生成模型 image-01。支持文生图和图生图，输出 URL 有效期24小时。可设置宽高比(16:9/1:1等)和尺寸(512~2048px)。');
+INSERT INTO `ai_configs` VALUES ('mm-text-m25', 'minimax', 'text', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', 'MiniMax-M2.5', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-16 16:21:32', 0.00010000, 'MiniMax 文本模型 M2.5，用于角色/场景描述生成、分镜AI拆解。支持 OpenAI 兼容格式。');
+INSERT INTO `ai_configs` VALUES ('mm-tts-speech02hd', 'minimax', 'tts', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', 'speech-02-hd', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-15 00:25:42', 0.00020000, 'MiniMax 语音合成 speech-02-hd 高清版。同步接口，返回音频URL或Hex数据。支持语速/音量/音高调节，默认音色 female-tianmei。单次最长10000字符。');
+INSERT INTO `ai_configs` VALUES ('mm-video-hailuo23', 'minimax', 'video', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', '', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-24 15:41:39', 0.60000000, 'MiniMax 海螺视频模型 Hailuo 2.3（最新旗舰）。异步任务模式：创建→轮询状态→下载。支持 6s/10s 视频、1080P 分辨率、15种运镜指令([推进][拉远][左移]等)。');
 
 -- ----------------------------
 -- Table structure for assets
