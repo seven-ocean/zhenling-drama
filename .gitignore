@@ -51,7 +51,6 @@ UPDATE.md
 
 # ===== Windows FFmpeg（Linux 用系统 FFmpeg）=====
 backend/ffmpeg/
-README.md
 
 # ===== 示例/测试数据文件 =====
 backend/jq/
