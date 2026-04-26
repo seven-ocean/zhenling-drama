@@ -4,7 +4,7 @@ server:
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://172.16.100.2:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/zhenling_drama?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: zhenling_drama
     password: ${MYSQL_PASSWORD:zhenling_drama}
     hikari:
@@ -50,6 +50,11 @@ http:
     servers: 8.8.8.8,8.8.4.4  # Google Public DNS
 
 # ====== FFmpeg 配置（开发环境 - Windows）======
+# ffmpeg:
+#   path: "/usr/bin/ffmpeg"
+#   probe-path: "/usr/bin/ffprobe"
+
+# ====== FFmpeg 配置（开发环境 - linux）======
 ffmpeg:
-  path: "backend/ffmpeg/bin/ffmpeg.exe"
-  probe-path: "backend/ffmpeg/bin/ffprobe.exe"
+  path: "/usr/bin/ffmpeg"
+  probe-path: "/usr/bin/ffprobe"

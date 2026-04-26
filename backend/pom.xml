@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.drama</groupId>
-    <artifactId>huobao-drama</artifactId>
+    <artifactId>zhenling-drama</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Huobao Drama</name>
+    <name>ZhenLing Drama</name>
     <description>AI Short Drama Generation Platform</description>
 
     <parent>
