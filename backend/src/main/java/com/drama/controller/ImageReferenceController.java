@@ -1,0 +1,56 @@
+package com.drama.controller;
+
+import com.drama.common.R;
+import com.drama.entity.Asset;
+import com.drama.service.ImageReferenceService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+/**
+ * 分镜参考图接口
+ * 为分镜生成"角色×场景"预览图，用于视频合成前的效果确认
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/image-reference")
+@RequiredArgsConstructor
+public class ImageReferenceController {
+
+    private final ImageReferenceService imageReferenceService;
+
+    /**
+     * 为指定分镜生成参考图
+     */
+    @PostMapping("/generate")
+    public R<Asset> generate(
+            @RequestParam String storyboardId,
+            @RequestParam(required = false, defaultValue = "false") Boolean forceRegenerate) {
+        log.info("[RefImg API] generate: storyboardId={}, forceRegenerate={}", storyboardId, forceRegenerate);
+        Asset asset = imageReferenceService.generateReference(storyboardId, forceRegenerate != null && forceRegenerate);
+        return R.ok(asset);
+    }
+
+    /**
+     * 获取分镜的参考图
+     */
+    @GetMapping("/{storyboardId}")
+    public R<Asset> get(@PathVariable String storyboardId) {
+        Asset asset = imageReferenceService.getReference(storyboardId);
+        if (asset == null) {
+            return R.ok(null);
+        }
+        return R.ok(asset);
+    }
+
+    /**
+     * 删除分镜的参考图
+     */
+    @DeleteMapping("/{storyboardId}")
+    public R<Void> delete(@PathVariable String storyboardId) {
+        imageReferenceService.deleteReference(storyboardId);
+        return R.ok(null);
+    }
+}

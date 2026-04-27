@@ -16,4 +16,12 @@ export const aiApi = {
     api('/images/scene', { method: 'POST', params }),
   generateGridImage: (params: any) => 
     api('/images/grid', { method: 'POST', params }),
+
+  // 参考图
+  generateReference: (params: { storyboardId: string, forceRegenerate?: boolean }) =>
+    api('/image-reference/generate', { method: 'POST', params }),
+  getReference: (storyboardId: string) =>
+    api(`/image-reference/${storyboardId}`),
+  deleteReference: (storyboardId: string) =>
+    api(`/image-reference/${storyboardId}`, { method: 'DELETE' }),
 }

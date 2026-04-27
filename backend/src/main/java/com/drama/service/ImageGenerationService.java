@@ -272,4 +272,82 @@ public class ImageGenerationService {
             // 不抛出异常，避免影响图片生成的主流程
         }
     }
+
+    // ==================== 供 ImageReferenceService 调用的公共方法 ====================
+
+    /**
+     * 直接生成图片（不保存到资产表）
+     * 供 ImageReferenceService 调用
+     *
+     * @param prompt 提示词
+     * @return 生成的图片 URL
+     */
+    public String generateImageDirect(String prompt) {
+        if (prompt == null || prompt.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "提示词不能为空");
+        }
+        log.info("[ImageGenDirect] Generating image with prompt: {}", prompt.substring(0, Math.min(100, prompt.length())));
+
+        try {
+            String imageUrl = aiServiceFactory.generateImage(null, prompt, null);
+            if (imageUrl == null || imageUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败：AI返回为空");
+            }
+            return imageUrl;
+        } catch (AiApiException e) {
+            log.error("[ImageGenDirect] AI API error: [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[ImageGenDirect] Image generation failed: {}", e.getMessage(), e);
+            throw new BusinessException(ResultCode.SERVER_ERROR, "图片生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 归档图片到 assets 表（供 ImageReferenceService 调用）
+     * 下载临时 URL → 上传到本地/OSS → 创建 Asset 记录
+     *
+     * @param dramaId    剧集ID
+     * @param tempUrl    AI返回的临时图片URL
+     * @param filename   目标文件名
+     * @param mimeType  MIME类型
+     * @param extraData  额外元数据JSON
+     * @return 归档后的 Asset 记录
+     */
+    public Asset archiveImage(String dramaId, String tempUrl, String filename, String mimeType, String extraData) {
+        try {
+            log.info("[ArchiveRef] Downloading image from: {}", tempUrl);
+
+            java.net.URI uri = java.net.URI.create(tempUrl);
+            ResponseEntity<byte[]> response = downloadRestTemplate.getForEntity(uri, byte[].class);
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.warn("[ArchiveRef] Failed to download {}, status={}", tempUrl, response.getStatusCode());
+                return saveAiUrlFallback(dramaId, tempUrl, filename, mimeType, extraData);
+            }
+
+            byte[] imageData = response.getBody();
+            log.info("[ArchiveRef] Downloaded {} bytes", imageData.length);
+
+            Asset archivedAsset = fileStorageService.uploadBytes(
+                    imageData, filename, dramaId, "image", mimeType);
+
+            archivedAsset.setSourceType("ai_archived");
+            archivedAsset.setExtraData(extraData);
+            assetService.updateById(archivedAsset);
+
+            log.info("[ArchiveRef] Successfully archived reference image → id={}, url={}",
+                    archivedAsset.getId(), archivedAsset.getFileUrl());
+
+            return archivedAsset;
+
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[ArchiveRef] Failed to archive image, using fallback URL: {}", e.getMessage());
+            return saveAiUrlFallback(dramaId, tempUrl, filename, mimeType, extraData);
+        }
+    }
 }
