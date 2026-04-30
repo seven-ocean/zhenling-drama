@@ -241,7 +241,7 @@ public class MiniMaxAdapter implements AiAdapter {
 
             log.info("[MiniMax] Image generation: model={}, prompt={}", useModel, prompt.substring(0, Math.min(50, prompt.length())));
             log.debug("[MiniMax] Request body: {}", body);
-            
+
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST,
                     new HttpEntity<>(body.toString(), authHeaders()),
@@ -279,6 +279,87 @@ public class MiniMaxAdapter implements AiAdapter {
             log.error("[MiniMax] Image generation error: {}", e.getMessage(), e);
             throw new AiApiException(-1, e.getMessage(),
                     "MiniMax 图片生成异常：" + e.getMessage() + "，请检查后端日志获取详细信息", "图片生成");
+        }
+    }
+
+    /**
+     * 多图参考图片生成
+     * MiniMax-Image-01 支持通过 image_urls 传入多张参考图（角色图×N + 场景图）合成一张图
+     * 降级策略：若不支持多图，则取第一张参考图或场景图作为唯一参考图调用 generateImage
+     */
+    @Override
+    public String generateImageWithReferences(String prompt, java.util.List<String> referenceImageUrls, String model) {
+        if (!isConfigured()) {
+            log.warn("[MiniMax] Image generation with references skipped: adapter not configured");
+            throw new AiApiException(-1, "", "MiniMax 图片生成适配器未配置", "多图参考生成");
+        }
+
+        // 过滤空 URL
+        java.util.List<String> validUrls = referenceImageUrls != null
+                ? referenceImageUrls.stream().filter(u -> u != null && !u.isBlank()).collect(java.util.stream.Collectors.toList())
+                : new java.util.ArrayList<>();
+
+        if (validUrls.isEmpty()) {
+            log.info("[MiniMax] No valid reference images, falling back to prompt-only generation");
+            return generateImage(prompt, model);
+        }
+
+        try {
+            String url = getBaseUrl() + "/image_generation";
+            String useModel = (model != null) ? model : DEFAULT_IMAGE_MODEL;
+
+            // 构建多图参考请求体
+            java.util.Map<String, Object> requestBody = new java.util.HashMap<>();
+            requestBody.put("model", useModel);
+            requestBody.put("prompt", prompt);
+            requestBody.put("aspect_ratio", "16:9");
+            requestBody.put("response_format", "url");
+            requestBody.put("n", 1);
+            requestBody.put("content_safe", false);
+            requestBody.put("image_urls", validUrls);
+
+            String bodyJson = objectMapper.writeValueAsString(requestBody);
+            log.info("[MiniMax] Image generation with {} reference images: model={}, prompt={}, imageCount={}",
+                    validUrls.size(), useModel, prompt.substring(0, Math.min(50, prompt.length())), validUrls.size());
+            log.debug("[MiniMax] Request body: {}", bodyJson);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.POST,
+                    new HttpEntity<>(bodyJson, authHeaders()),
+                    String.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode root = objectMapper.readTree(response.getBody());
+                ensureSuccess(root, "多图参考生成");
+
+                JsonNode data = root.path("data");
+                JsonNode imageUrls = data.path("image_urls");
+                if (imageUrls.isArray() && imageUrls.size() > 0) {
+                    String imageUrl = imageUrls.get(0).asText("");
+                    log.info("[MiniMax] Image with references generated successfully: {}", imageUrl);
+                    return imageUrl;
+                } else {
+                    log.warn("[MiniMax] Image gen with references response has no image_urls, degrading to prompt-only");
+                    return generateImage(prompt, model);
+                }
+            } else {
+                int httpStatus = response.getStatusCodeValue();
+                log.warn("[MiniMax] Multi-image reference failed (HTTP {}), degrading to prompt-only: {}",
+                        httpStatus, response.getBody());
+                // 降级：不用参考图，纯 prompt 生成
+                return generateImage(prompt, model);
+            }
+        } catch (AiApiException e) {
+            // API 异常直接透传
+            throw e;
+        } catch (Exception e) {
+            log.error("[MiniMax] Image generation with references error, degrading to prompt-only: {}", e.getMessage());
+            try {
+                return generateImage(prompt, model);
+            } catch (Exception ex) {
+                throw new AiApiException(-1, ex.getMessage(),
+                        "MiniMax 多图参考生成异常，降级失败：" + ex.getMessage(), "多图参考生成");
+            }
         }
     }
 

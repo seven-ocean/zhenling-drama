@@ -1,21 +1,22 @@
 package com.drama.service;
 
 import com.drama.common.BusinessException;
-import com.drama.common.IdUtils;
 import com.drama.common.ResultCode;
+import com.drama.dto.StoryboardRefStatus;
 import com.drama.entity.Asset;
 import com.drama.entity.Character;
 import com.drama.entity.Scene;
 import com.drama.entity.Storyboard;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 分镜参考图服务
@@ -59,23 +60,58 @@ public class ImageReferenceService {
             deleteReferenceRecord(storyboardId);
         }
 
-        // 3. 获取角色和场景信息
-        Character character = null;
-        Scene scene = null;
-        if (StringUtils.hasText(sb.getCharacterId())) {
-            character = characterService.getById(sb.getCharacterId());
+        // 3. 收集所有角色图 URL（支持多角色：characterIds JSON数组 + 兼容 characterId）
+        List<String> characterImageUrls = new ArrayList<>();
+        List<Character> characters = new ArrayList<>();
+        // 新字段：characterIds（JSON 数组，如 ["id1","id2"]）
+        if (StringUtils.hasText(sb.getCharacterIds())) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                java.util.List<String> ids = mapper.readValue(sb.getCharacterIds(), java.util.List.class);
+                for (String id : ids) {
+                    if (StringUtils.hasText(id)) {
+                        Character ch = characterService.getById(id);
+                        if (ch != null && StringUtils.hasText(ch.getImageUrl())) {
+                            characterImageUrls.add(ch.getImageUrl());
+                            characters.add(ch);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[RefImg] Failed to parse characterIds JSON: {}", sb.getCharacterIds());
+            }
         }
+        // 兼容旧字段：单个 characterId
+        if (characterImageUrls.isEmpty() && StringUtils.hasText(sb.getCharacterId())) {
+            Character ch = characterService.getById(sb.getCharacterId());
+            if (ch != null && StringUtils.hasText(ch.getImageUrl())) {
+                characterImageUrls.add(ch.getImageUrl());
+                characters.add(ch);
+            }
+        }
+
+        // 4. 收集场景图 URL
+        String sceneUrl = null;
+        Scene scene = null;
         if (StringUtils.hasText(sb.getSceneId())) {
             scene = sceneService.getById(sb.getSceneId());
+            if (scene != null && StringUtils.hasText(scene.getImageUrl())) {
+                sceneUrl = scene.getImageUrl();
+            }
         }
 
-        // 4. 构造复合提示词
-        String prompt = buildReferencePrompt(sb, character, scene);
+        // 5. 构造复合提示词（支持多角色）
+        String prompt = buildReferencePrompt(sb, characters, scene);
         log.info("[RefImg] Generated prompt for storyboard {}: {}", storyboardId, prompt.substring(0, Math.min(200, prompt.length())));
 
-        // 5. 调用图片生成服务
-        // 复用已有 archiveAiImage 逻辑，归档到 assets 表
-        Asset asset = archiveReferenceImage(sb.getDramaId(), storyboardId, prompt, sb.getId());
+        // 6. 构建参考图 URL 列表（角色图×N + 场景图）
+        List<String> referenceImageUrls = new ArrayList<>(characterImageUrls);
+        if (sceneUrl != null) {
+            referenceImageUrls.add(sceneUrl);
+        }
+
+        // 7. 调用多图参考生成（或降级为纯文字生成）
+        Asset asset = archiveReferenceImageWithReferences(sb.getDramaId(), storyboardId, prompt, referenceImageUrls, sb.getId());
 
         log.info("[RefImg] Reference image generated: id={}, storyboardId={}, url={}",
                 asset.getId(), storyboardId, asset.getFileUrl());
@@ -103,15 +139,49 @@ public class ImageReferenceService {
         log.info("[RefImg] Reference image deleted for storyboardId={}", storyboardId);
     }
 
+    /**
+     * 批量获取剧集下所有分镜的参考图状态
+     *
+     * @param dramaId 剧集ID
+     * @return 分镜参考图状态列表
+     */
+    public List<StoryboardRefStatus> listRefStatusByDrama(String dramaId) {
+        var q = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Storyboard>();
+        q.eq(Storyboard::getDramaId, dramaId)
+         .orderByAsc(Storyboard::getEpisodeNumber)
+         .orderByAsc(Storyboard::getShotNumber);
+        List<Storyboard> storyboards = storyboardService.list(q);
+        List<StoryboardRefStatus> result = new ArrayList<>();
+
+        for (Storyboard sb : storyboards) {
+            StoryboardRefStatus status = new StoryboardRefStatus();
+            status.setStoryboardId(sb.getId());
+            status.setShotNumber(sb.getShotNumber());
+            status.setAction(sb.getAction());
+
+            Asset refAsset = findExistingReference(sb.getId());
+            if (refAsset != null && StringUtils.hasText(refAsset.getFileUrl())) {
+                status.setHasRefImage(true);
+                status.setRefImageUrl(refAsset.getFileUrl());
+            } else {
+                status.setHasRefImage(false);
+            }
+            result.add(status);
+        }
+        return result;
+    }
+
     // ==================== 私有方法 ====================
 
     /**
      * 查找已有的参考图记录
      */
     private Asset findExistingReference(String storyboardId) {
-        // 使用 MySQL JSON 函数精确查询 extra_data 中的 storyboardId
+        // JSON_EXTRACT 在 extra_data 为非法 JSON 时会抛出异常（MySQL 8.x）
+        // 使用 JSON_VALID 先行过滤，只对有效的 JSON 执行 JSON_EXTRACT
         var q = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Asset>();
-        q.apply("JSON_EXTRACT(extra_data, '$.type') = 'reference_image'")
+        q.apply("JSON_VALID(extra_data) = 1")
+         .apply("JSON_EXTRACT(extra_data, '$.type') = 'reference_image'")
          .apply("JSON_EXTRACT(extra_data, '$.storyboardId') = {0}", storyboardId)
          .orderByDesc(Asset::getCreatedAt)
          .last("LIMIT 1");
@@ -127,7 +197,8 @@ public class ImageReferenceService {
      */
     private void deleteReferenceRecord(String storyboardId) {
         var q = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Asset>();
-        q.apply("JSON_EXTRACT(extra_data, '$.type') = 'reference_image'")
+        q.apply("JSON_VALID(extra_data) = 1")
+         .apply("JSON_EXTRACT(extra_data, '$.type') = 'reference_image'")
          .apply("JSON_EXTRACT(extra_data, '$.storyboardId') = {0}", storyboardId);
         var list = assetService.list(q);
         if (list != null && !list.isEmpty()) {
@@ -138,10 +209,10 @@ public class ImageReferenceService {
     }
 
     /**
-     * 构造复合参考图提示词
-     * 格式: "In {场景描述}, {角色外观描述}, {动作描述}, cinematic lighting, film still quality, 16:9"
+     * 构造复合参考图提示词（支持多角色）
+     * 格式: "In {场景描述}, {角色1外观} and {角色2外观}, {动作描述}, cinematic lighting, film still quality, 16:9"
      */
-    private String buildReferencePrompt(Storyboard sb, Character character, Scene scene) {
+    private String buildReferencePrompt(Storyboard sb, List<Character> characters, Scene scene) {
         StringBuilder prompt = new StringBuilder();
 
         // 场景
@@ -153,12 +224,18 @@ public class ImageReferenceService {
             prompt.append("In a cinematic scene");
         }
 
-        // 角色
-        if (character != null) {
-            if (StringUtils.hasText(character.getAppearancePrompt())) {
-                prompt.append(", ").append(character.getAppearancePrompt());
-            } else if (StringUtils.hasText(character.getName())) {
-                prompt.append(", a character named ").append(character.getName());
+        // 所有角色（用 and 连接）
+        if (characters != null && !characters.isEmpty()) {
+            List<String> charDescs = new ArrayList<>();
+            for (Character ch : characters) {
+                if (StringUtils.hasText(ch.getAppearancePrompt())) {
+                    charDescs.add(ch.getAppearancePrompt());
+                } else if (StringUtils.hasText(ch.getName())) {
+                    charDescs.add("a character named " + ch.getName());
+                }
+            }
+            if (!charDescs.isEmpty()) {
+                prompt.append(", with ").append(String.join(" and ", charDescs));
             }
         }
 
@@ -196,12 +273,19 @@ public class ImageReferenceService {
     }
 
     /**
-     * 归档参考图到 assets 表
-     * 复用 imageGenerationService 的 AI 生成 + 归档能力
+     * 归档参考图到 assets 表（支持多图参考生成）
      */
-    private Asset archiveReferenceImage(String dramaId, String storyboardId, String prompt, String shotId) {
-        // 调用 AI 图片生成（走 AiServiceFactory 获取供应商配置）
-        String imageUrl = imageGenerationService.generateImageDirect(prompt);
+    private Asset archiveReferenceImageWithReferences(String dramaId, String storyboardId, String prompt,
+                                                       List<String> referenceImageUrls, String shotId) {
+        // 调用 AI 多图参考图片生成
+        String imageUrl;
+        if (referenceImageUrls != null && !referenceImageUrls.isEmpty()) {
+            log.info("[RefImg] Generating with {} reference images", referenceImageUrls.size());
+            imageUrl = imageGenerationService.generateImageWithReferences(prompt, referenceImageUrls);
+        } else {
+            log.info("[RefImg] No reference images, generating with prompt only");
+            imageUrl = imageGenerationService.generateImageDirect(prompt);
+        }
 
         if (imageUrl == null || imageUrl.isEmpty()) {
             throw new BusinessException(ResultCode.SERVER_ERROR, "参考图生成失败：AI返回为空");
@@ -209,11 +293,20 @@ public class ImageReferenceService {
 
         // 归档到本地/OSS
         String filename = "ref_" + storyboardId + "_" + System.currentTimeMillis() + ".png";
-        String extraData = String.format(
-                "{\"type\":\"reference_image\",\"storyboardId\":\"%s\",\"shotId\":\"%s\",\"prompt\":\"%s\"}",
-                storyboardId, shotId,
-                prompt.length() > 500 ? prompt.substring(0, 500) : prompt
-        );
+        // 使用 ObjectMapper 构建合法的 JSON，避免 prompt 中的引号/换行等破坏 JSON 格式
+        ObjectMapper mapper = new ObjectMapper();
+        String safePrompt = prompt.length() > 500 ? prompt.substring(0, 500) : prompt;
+        String extraData;
+        try {
+            extraData = mapper.writeValueAsString(new java.util.LinkedHashMap<String, String>() {{
+                put("type", "reference_image");
+                put("storyboardId", storyboardId);
+                put("shotId", shotId);
+                put("prompt", safePrompt);
+            }});
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.SERVER_ERROR, "构建参考图元数据失败: " + e.getMessage());
+        }
 
         Asset asset = imageGenerationService.archiveImage(dramaId, imageUrl, filename, "image/png", extraData);
         return asset;
