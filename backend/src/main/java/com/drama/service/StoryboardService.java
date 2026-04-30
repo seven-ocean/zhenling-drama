@@ -138,6 +138,7 @@ public class StoryboardService extends ServiceImpl<StoryboardMapper, Storyboard>
         if (updates.containsKey("action")) existing.setAction((String) updates.get("action"));
         if (updates.containsKey("dialogue")) existing.setDialogue((String) updates.get("dialogue"));
         if (updates.containsKey("characterId")) existing.setCharacterId((String) updates.get("characterId"));
+        if (updates.containsKey("characterIds")) existing.setCharacterIds((String) updates.get("characterIds"));
         if (updates.containsKey("sceneId")) existing.setSceneId((String) updates.get("sceneId"));
         if (updates.containsKey("status")) existing.setStatus((String) updates.get("status"));
         if (updates.containsKey("characterImageUrl")) existing.setCharacterImageUrl((String) updates.get("characterImageUrl"));

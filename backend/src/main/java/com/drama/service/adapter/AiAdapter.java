@@ -34,6 +34,18 @@ public interface AiAdapter {
     String generateImage(String prompt, String model);
 
     /**
+     * 多图参考图片生成（MiniMax-Image-01 等支持多图参考的模型）
+     * @param prompt 图片提示词
+     * @param referenceImageUrls 参考图 URL 列表（角色图×N + 场景图）
+     * @param model 模型名称
+     * @return 生成的图片URL
+     */
+    default String generateImageWithReferences(String prompt, java.util.List<String> referenceImageUrls, String model) {
+        // 默认实现：降级为纯文字提示词生成（不支持多图的模型走此路径）
+        return generateImage(prompt, model);
+    }
+
+    /**
      * 视频生成（图生视频）
      * @param imageUrl 参考图片URL
      * @param model 模型名称

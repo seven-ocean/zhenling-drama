@@ -24,4 +24,6 @@ export const aiApi = {
     api(`/image-reference/${storyboardId}`),
   deleteReference: (storyboardId: string) =>
     api(`/image-reference/${storyboardId}`, { method: 'DELETE' }),
+  listReferenceByDrama: (dramaId: string) =>
+    api(`/image-reference/list/${dramaId}`),
 }

@@ -149,25 +149,41 @@ const shotTypes = [
 ]
 
 // 获取分镜关联的角色和场景图片
-const relatedCharImage = ref('')
+const relatedCharImages = ref<string[]>([])
 const relatedSceneImage = ref('')
-const relatedCharName = ref('')
+const relatedCharNames = ref<string[]>([])
 const relatedSceneName = ref('')
 
 const openSbEditor = (shot?: any) => {
   editingSb.value = shot || null
   sbForm.value = shot ? { ...shot } : {}
-  
-  // 加载关联的角色和场景图片
-  if (shot?.characterId) {
+
+  // 加载关联的角色图片（支持多角色）
+  if (shot?.characterIds) {
+    try {
+      const ids = typeof shot.characterIds === 'string' ? JSON.parse(shot.characterIds) : shot.characterIds
+      relatedCharImages.value = ids.map((id: string) => {
+        const char = characters.value.find(c => c.id === id)
+        return char?.imageUrl || ''
+      }).filter(Boolean)
+      relatedCharNames.value = ids.map((id: string) => {
+        const char = characters.value.find(c => c.id === id)
+        return char?.name || id
+      })
+    } catch {
+      relatedCharImages.value = []
+      relatedCharNames.value = []
+    }
+  } else if (shot?.characterId) {
+    // 兼容旧数据：单个 characterId
     const char = characters.value.find(c => c.id === shot.characterId)
-    relatedCharImage.value = char?.imageUrl || ''
-    relatedCharName.value = char?.name || shot.characterName || '未知角色'
+    relatedCharImages.value = char ? [char.imageUrl || ''] : []
+    relatedCharNames.value = char ? [char.name || shot.characterName || '未知角色'] : []
   } else {
-    relatedCharImage.value = ''
-    relatedCharName.value = shot?.characterName || ''
+    relatedCharImages.value = []
+    relatedCharNames.value = []
   }
-  
+
   if (shot?.sceneId) {
     const scene = scenes.value.find(s => s.id === shot.sceneId)
     relatedSceneImage.value = scene?.imageUrl || ''
@@ -176,20 +192,33 @@ const openSbEditor = (shot?: any) => {
     relatedSceneImage.value = ''
     relatedSceneName.value = ''
   }
-  
+
   sbEditorOpen.value = true
 }
 
-// 选择角色后：自动更新关联信息 + 回填 characterImageUrl
-const onSbSelectCharacter = (characterId: string) => {
-  sbForm.value.characterId = characterId
-  const char = characters.value.find(c => c.id === characterId)
-  if (char) {
-    relatedCharImage.value = char.imageUrl || ''
-    relatedCharName.value = char.name || ''
-    sbForm.value.characterName = char.name
-    sbForm.value.characterImageUrl = char.imageUrl || ''
+// 选择角色后（多选）：自动更新关联信息
+const onSbSelectCharacters = (characterIds: string[]) => {
+  sbForm.value.characterIds = characterIds
+  // 同时保留第一个作为兼容
+  if (characterIds.length > 0) {
+    const first = characters.value.find(c => c.id === characterIds[0])
+    sbForm.value.characterId = characterIds[0]
+    sbForm.value.characterName = first?.name || ''
+    sbForm.value.characterImageUrl = first?.imageUrl || ''
+  } else {
+    sbForm.value.characterId = null
+    sbForm.value.characterName = ''
+    sbForm.value.characterImageUrl = ''
   }
+  // 更新关联图片展示
+  relatedCharImages.value = characterIds.map((id: string) => {
+    const char = characters.value.find(c => c.id === id)
+    return char?.imageUrl || ''
+  }).filter(Boolean)
+  relatedCharNames.value = characterIds.map((id: string) => {
+    const char = characters.value.find(c => c.id === id)
+    return char?.name || id
+  })
 }
 
 // 选择场景后：自动更新关联信息 + 回填 sceneImageUrl
@@ -207,6 +236,10 @@ const onSbSelectScene = (sceneId: string) => {
 const saveShot = async () => {
   if (!editingSb.value?.id) return
   try {
+    // 多选角色时将 characterIds 数组转为 JSON 字符串
+    if (sbForm.value.characterIds && Array.isArray(sbForm.value.characterIds)) {
+      sbForm.value.characterIds = JSON.stringify(sbForm.value.characterIds)
+    }
     const res = await storyboardApi.update(editingSb.value.id, sbForm.value)
     if (res.code === 200) {
       const idx = storyboards.value.findIndex(s => s.id === editingSb.value!.id)
@@ -236,6 +269,10 @@ const goToVideoGeneration = (shot: any) => {
   if (shot.gridImageUrl) queryParams.set('gridImageUrl', shot.gridImageUrl)
   if (shot.characterImageUrl) queryParams.set('characterImageUrl', shot.characterImageUrl)
   if (shot.sceneImageUrl) queryParams.set('sceneImageUrl', shot.sceneImageUrl)
+  // 参考图优先传递
+  if (refImages.value[shot.id]?.fileUrl) {
+    queryParams.set('referenceImageUrl', refImages.value[shot.id].fileUrl)
+  }
 
   // 跳转到媒体工作室页面
   router.push({
@@ -318,6 +355,9 @@ const refImages = ref<Record<string, any>>({}) // storyboardId → Asset
 const generatingRefImg = ref<string | null>(null) // 正在生成参考图的分镜ID
 const refPreviewOpen = ref(false)
 const refPreviewImage = ref<any>(null)
+const refPanelOpen = ref(false)  // 批量状态面板展开状态
+const refAllLoading = ref(false) // 全部生成中
+const refStatusList = ref<any[]>([]) // 批量状态列表
 
 // 视频模型选项
 const videoModels = [
@@ -390,6 +430,42 @@ const loadReferenceImages = async () => {
         }
       } catch { /* ignore */ }
     }
+  }
+}
+
+// 加载批量参考图状态列表
+const loadRefStatusList = async () => {
+  try {
+    const res = await aiApi.listReferenceByDrama(dramaId)
+    if (res.code === 200 && res.data) {
+      refStatusList.value = res.data
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+// 全部生成参考图（过滤未生成分镜，并发触发生成）
+const generateAllRefImages = async () => {
+  const pendingShots = storyboards.value.filter(s => s.id && !refImages.value[s.id])
+  if (pendingShots.length === 0) {
+    AMessage.warning('所有分镜已生成参考图')
+    return
+  }
+  refAllLoading.value = true
+  try {
+    // 并发限制3个
+    const batchSize = 3
+    for (let i = 0; i < pendingShots.length; i += batchSize) {
+      const batch = pendingShots.slice(i, i + batchSize)
+      await Promise.all(batch.map(shot => generateRefImage(shot)))
+    }
+    await loadRefStatusList()
+    AMessage.success('已为所有未生成的分镜创建参考图')
+  } catch (e: any) {
+    AMessage.error(e?.message || '批量生成失败')
+  } finally {
+    refAllLoading.value = false
   }
 }
 
@@ -476,6 +552,8 @@ onMounted(async () => {
   await Promise.all([loadStoryboards(), loadCharacters(), loadScenes(), loadExportHistory(), loadVideos()])
   // 加载已有参考图
   await loadReferenceImages()
+  // 加载批量状态
+  await loadRefStatusList()
   // 每5秒轮询一次视频状态
   pollTimer = setInterval(pollVideos, 5000)
 })
@@ -630,6 +708,49 @@ onUnmounted(() => {
 
     <!-- ========== 分镜 Tab ========== -->
     <div v-show="activeTab === 'storyboard'" class="space-y-4 w-full">
+      <!-- 参考图批量状态面板 -->
+      <div class="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden">
+        <!-- 收起态 header -->
+        <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[#242424]" @click="refPanelOpen = !refPanelOpen">
+          <div class="flex items-center gap-2">
+            <PictureOutlined class="text-[#a0a0a0]" />
+            <span class="text-sm text-[#a0a0a0]">参考图状态</span>
+            <span class="text-xs px-1.5 py-0.5 rounded" :class="refStatusList.filter(r => r.hasRefImage).length === refStatusList.length && refStatusList.length > 0 ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'">
+              {{ refStatusList.filter(r => r.hasRefImage).length }}/{{ refStatusList.length }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a-button v-if="!refPanelOpen" type="link" size="small" :loading="refAllLoading" :disabled="refStatusList.filter(r => !r.hasRefImage).length === 0" @click.stop="generateAllRefImages">
+              全部生成
+            </a-button>
+            <a-button type="link" size="small" class="!text-[#666]">
+              {{ refPanelOpen ? '收起' : '展开' }}
+            </a-button>
+          </div>
+        </div>
+        <!-- 展开态列表 -->
+        <div v-if="refPanelOpen && refStatusList.length > 0" class="border-t border-[#2a2a2a] max-h-64 overflow-y-auto">
+          <div v-for="item in refStatusList" :key="item.storyboardId"
+            class="flex items-center justify-between px-4 py-2 border-b border-[#222] last:border-b-0 hover:bg-[#242424]">
+            <div class="flex items-center gap-2 min-w-0">
+              <span v-if="item.hasRefImage" class="text-green-400 text-sm">✅</span>
+              <span v-else class="text-gray-500 text-sm">⬜</span>
+              <span class="text-xs text-[#888]">#{{ item.shotNumber }}</span>
+              <span class="text-xs text-[#d0d0d0] truncate max-w-[120px]">{{ item.action || '（无动作描述）' }}</span>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <template v-if="item.hasRefImage">
+                <a-button type="link" size="small" class="!text-xs !p-1" @click="() => { const shot = storyboards.find(s => s.id === item.storyboardId); if(shot) previewRefImage(shot) }">查看</a-button>
+                <a-button type="link" size="small" class="!text-xs !p-1" :loading="generatingRefImg === item.storyboardId" @click="() => { const shot = storyboards.find(s => s.id === item.storyboardId); if(shot) forceRegenerateRefImage(shot) }">重新生成</a-button>
+              </template>
+              <template v-else>
+                <a-button type="link" size="small" class="!text-xs !p-1" :loading="generatingRefImg === item.storyboardId" @click="() => { const shot = storyboards.find(s => s.id === item.storyboardId); if(shot) generateRefImage(shot) }">生成</a-button>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- AI拆解 -->
       <div class="bg-gradient-to-br from-[#1a1a2e] to-[#16162a] rounded-xl p-4 sm:p-5 border border-[#2a2a3e]">
         <h4 class="text-sm font-medium text-[#f5f5f5] mb-3 flex items-center gap-2">
@@ -918,16 +1039,16 @@ onUnmounted(() => {
       destroyOnClose
     >
       <div class="space-y-4 pt-2">
-        <!-- 关联图片展示区域 -->
-        <div v-if="relatedCharImage || relatedSceneImage" class="grid grid-cols-2 gap-4 p-3 bg-[#1a1a1a] rounded-lg">
-          <!-- 角色图 -->
-          <div v-if="relatedCharImage" class="space-y-2">
+        <!-- 关联图片展示区域（支持多角色） -->
+        <div v-if="relatedCharImages.length > 0 || relatedSceneImage" class="grid grid-cols-2 gap-4 p-3 bg-[#1a1a1a] rounded-lg">
+          <!-- 角色图（多角色时循环展示） -->
+          <div v-for="(img, idx) in relatedCharImages" :key="idx" class="space-y-2">
             <div class="text-xs text-gray-400 flex items-center gap-1">
               <UserOutlined />
-              角色: {{ relatedCharName }}
+              角色: {{ relatedCharNames[idx] || '未知角色' }}
             </div>
             <div class="relative aspect-square rounded-lg overflow-hidden bg-[#2a2a2a] border border-[#333]">
-              <img :src="relatedCharImage" class="w-full h-full object-cover" />
+              <img v-if="img" :src="img" class="w-full h-full object-cover" />
             </div>
           </div>
           <!-- 场景图 -->
@@ -946,16 +1067,18 @@ onUnmounted(() => {
         <div class="grid grid-cols-2 gap-3 p-3 bg-[#1a1a1a] rounded-lg">
           <div>
             <label class="block text-xs text-gray-400 mb-1.5 flex items-center gap-1">
-              <UserOutlined /> 关联角色
+              <UserOutlined /> 关联角色（多选）
             </label>
             <a-select
-              v-model:value="sbForm.characterId"
+              v-model:value="sbForm.characterIds"
               placeholder="选择角色..."
               size="small"
               allowClear
               showSearch
+              mode="multiple"
+              :maxTagCount="2"
               class="w-full"
-              @change="onSbSelectCharacter"
+              @change="onSbSelectCharacters"
             >
               <a-select-option v-for="char in characters" :key="char.id" :value="char.id">
                 {{ char.name }}{{ char.imageUrl ? ' 📸' : '' }}

@@ -25,6 +25,11 @@ public class Storyboard {
     private String dialogue;
     private String characterId;
     private String sceneId;
+    /**
+     * 多角色 ID 列表（JSON 数组格式，如 ["id1","id2"]）
+     * 用于分镜中出现多个角色时
+     */
+    private String characterIds;
     private String characterImageUrl;
     private String sceneImageUrl;
     private String gridImageUrl;

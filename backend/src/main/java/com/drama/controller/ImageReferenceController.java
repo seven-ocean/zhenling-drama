@@ -1,13 +1,14 @@
 package com.drama.controller;
 
 import com.drama.common.R;
+import com.drama.dto.StoryboardRefStatus;
 import com.drama.entity.Asset;
 import com.drama.service.ImageReferenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import java.util.List;
 
 /**
  * 分镜参考图接口
@@ -52,5 +53,15 @@ public class ImageReferenceController {
     public R<Void> delete(@PathVariable String storyboardId) {
         imageReferenceService.deleteReference(storyboardId);
         return R.ok(null);
+    }
+
+    /**
+     * 批量获取剧集下所有分镜的参考图状态
+     */
+    @GetMapping("/list/{dramaId}")
+    public R<List<StoryboardRefStatus>> listByDrama(@PathVariable String dramaId) {
+        log.info("[RefImg API] listByDrama: dramaId={}", dramaId);
+        List<StoryboardRefStatus> list = imageReferenceService.listRefStatusByDrama(dramaId);
+        return R.ok(list);
     }
 }
