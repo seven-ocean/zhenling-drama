@@ -6,6 +6,7 @@ import { audioApi, videoApi } from '@/utils/request'
 import { assetApi } from '@/utils/asset'
 import { composeApi } from '@/utils/compose'
 import { ttsPreviewApi } from '@/utils/aiConfig'
+import { aiApi } from '@/utils/ai'
 import { storyboardApi } from '@/utils/request'
 import { message as AMessage } from 'ant-design-vue'
 import {
@@ -616,6 +617,15 @@ watch(videoStoryboardId, async (newVal) => {
         if (sb.gridImageUrl) { videoImageUrl.value = sb.gridImageUrl }
         else if (sb.characterImageUrl) { videoImageUrl.value = sb.characterImageUrl }
         else if (sb.sceneImageUrl) { videoImageUrl.value = sb.sceneImageUrl }
+        else {
+          // 没有分镜图片时，查询该分镜的参考图
+          try {
+            const res = await aiApi.getReference(newVal)
+            if (res.code === 200 && res.data?.fileUrl) {
+              videoImageUrl.value = res.data.fileUrl
+            }
+          } catch (e) { /* ignore */ }
+        }
         pickedVideoImage.value = pickImage(videoImageUrl.value)
       }
 
@@ -1049,8 +1059,12 @@ const checkQueryParams = () => {
       videoPrompt.value = query.action as string
     }
 
-    // 自动填入图片（优先级：宫格图 > 角色图 > 场景图）
-    if (query.gridImageUrl) {
+    // 自动填入图片（优先级：参考图 > 宫格图 > 角色图 > 场景图）
+    // 参考图是用户刚生成并确认的预览图，优先级最高
+    if (query.referenceImageUrl) {
+      videoImageUrl.value = query.referenceImageUrl as string
+      pickedVideoImage.value = { url: query.referenceImageUrl as string, filename: '参考图' }
+    } else if (query.gridImageUrl) {
       videoImageUrl.value = query.gridImageUrl as string
     } else if (query.characterImageUrl) {
       videoImageUrl.value = query.characterImageUrl as string
