@@ -142,6 +142,14 @@ public class AiServiceFactory {
     }
 
     /**
+     * 多图参考图片生成
+     */
+    public String generateImageWithReferences(String provider, String prompt, java.util.List<String> referenceImageUrls, String model) {
+        AiAdapter adapter = provider != null ? getAdapter(provider) : getAdapterByType("image");
+        return adapter.generateImageWithReferences(prompt, referenceImageUrls, model);
+    }
+
+    /**
      * 视频生成（基础版，向后兼容）
      */
     public String generateVideo(String provider, String imageUrl, String model) {
