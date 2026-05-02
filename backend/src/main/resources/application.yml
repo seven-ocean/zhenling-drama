@@ -1,0 +1,93 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: zhenling-drama
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+file:
+  upload:
+    path: ./data/storage
+    max-size: 100MB
+  static:
+    path: /static
+    url-prefix: /static
+
+# ====== OSS 对象存储配置 ======
+oss:
+  enabled: false
+  provider: aliyun
+  endpoint: http://oss-cn-chengdu.aliyuncs.com
+  access-key-id: ${OSS_ACCESS_KEY_ID}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+  bucket-name: avater2025
+  custom-domain:
+  base-path: drama-assets
+
+cors:
+  allowed-origins: http://localhost:5173,http://localhost:3013,http://172.16.100.2:5173,http://172.16.100.2:3013
+
+ai:
+  default-text-provider: openai
+  default-image-provider: openai
+  default-video-provider: minimax
+  default-tts-provider: minimax
+
+# ====== FFmpeg 配置 ======
+ffmpeg:
+  # FFmpeg 可执行文件路径（留空则使用系统 PATH 中的 ffmpeg）
+  # Windows 开发环境请在 application-dev.yml 中指定完整路径
+  # Linux/生产环境通常已安装到系统 PATH，保持空即可
+  path: ""
+  # ffprobe 可执行文件路径（留空则使用系统 PATH 中的 ffprobe）
+  probe-path: ""
+
+# ====== 字幕渲染配置 ======
+subtitle:
+  # 字体文件绝对路径（优先级最高，指定后忽略 font-name）
+  # Windows: C:/Windows/Fonts/msyh.ttc
+  # Linux: /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc
+  # Mac: /System/Library/Fonts/PingFang.ttc
+  # 留空则使用下面的 font-name 系统字体回退
+  font-file: ""
+  # 回退字体名称（font-file 为空时使用）
+  font-name: "Microsoft YaHei"
+  # 字号（基于1080p分辨率）
+  font-size: 28
+  # 字幕位置: bottom(底部) / top(顶部) / center(居中)
+  position: bottom
+  # 主色: 白色 (ASS BGR+Alpha格式)
+  primary-color: "&H00FFFFFF"
+  # 描边色: 深灰色
+  outline-color: "&H000000FF"
+  # 背景色: 半透明黑色60%
+  back-color: "&H80000000"
+  # 描边宽度(像素)
+  outline-width: 2
+  # 阴影深度(像素)
+  shadow-depth: 2
+  # 底部边距(像素)
+  margin-v: 40
+
+redis:
+  key-prefix: drama
+  token-prefix: token
+  cache-prefix: cache

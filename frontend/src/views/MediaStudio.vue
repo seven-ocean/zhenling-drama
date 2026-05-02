@@ -605,6 +605,7 @@ watch(videoStoryboardId, async (newVal) => {
       const pickImage = (url: string) => url ? { url, filename: '分镜图片' } : null
 
       // 根据模式填入不同的图片 + 更新预览状态
+      // 优先级：参考图 > 宫格图 > 角色图 > 场景图
       if (videoGenerationMode.value === 'FIRST_LAST_FRAME') {
         firstFrameUrl.value = sb.sceneImageUrl || sb.gridImageUrl || ''
         lastFrameUrl.value = sb.gridImageUrl || sb.characterImageUrl || ''
@@ -614,19 +615,34 @@ watch(videoStoryboardId, async (newVal) => {
         subjectImageUrl.value = sb.characterImageUrl || sb.gridImageUrl || ''
         pickedSubjectImage.value = pickImage(subjectImageUrl.value)
       } else {
-        if (sb.gridImageUrl) { videoImageUrl.value = sb.gridImageUrl }
-        else if (sb.characterImageUrl) { videoImageUrl.value = sb.characterImageUrl }
-        else if (sb.sceneImageUrl) { videoImageUrl.value = sb.sceneImageUrl }
-        else {
-          // 没有分镜图片时，查询该分镜的参考图
-          try {
-            const res = await aiApi.getReference(newVal)
-            if (res.code === 200 && res.data?.fileUrl) {
-              videoImageUrl.value = res.data.fileUrl
-            }
-          } catch (e) { /* ignore */ }
+        // IMAGE_TO_VIDEO 模式：优先使用参考图（角色×场景合成图）
+        // 只有在没有参考图时才降级到宫格图/角色图/场景图
+        try {
+          const res = await aiApi.getReference(newVal)
+          if (res.code === 200 && res.data?.fileUrl) {
+            videoImageUrl.value = res.data.fileUrl
+            pickedVideoImage.value = { url: res.data.fileUrl, filename: '参考图' }
+          } else if (sb.gridImageUrl) {
+            videoImageUrl.value = sb.gridImageUrl
+            pickedVideoImage.value = pickImage(videoImageUrl.value)
+          } else if (sb.characterImageUrl) {
+            videoImageUrl.value = sb.characterImageUrl
+            pickedVideoImage.value = pickImage(videoImageUrl.value)
+          } else if (sb.sceneImageUrl) {
+            videoImageUrl.value = sb.sceneImageUrl
+            pickedVideoImage.value = pickImage(videoImageUrl.value)
+          } else {
+            videoImageUrl.value = ''
+            pickedVideoImage.value = null
+          }
+        } catch (e) {
+          // 查询参考图失败，降级到宫格图
+          if (sb.gridImageUrl) { videoImageUrl.value = sb.gridImageUrl }
+          else if (sb.characterImageUrl) { videoImageUrl.value = sb.characterImageUrl }
+          else if (sb.sceneImageUrl) { videoImageUrl.value = sb.sceneImageUrl }
+          else { videoImageUrl.value = '' }
+          pickedVideoImage.value = pickImage(videoImageUrl.value)
         }
-        pickedVideoImage.value = pickImage(videoImageUrl.value)
       }
 
       // ====== 查询该分镜的配音，自动设置视频时长 ======
