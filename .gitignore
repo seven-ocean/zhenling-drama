@@ -54,3 +54,4 @@ backend/ffmpeg/
 
 # ===== 示例/测试数据文件 =====
 backend/jq/
+backend/ffmpeg/
