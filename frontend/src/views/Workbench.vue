@@ -129,6 +129,8 @@ const loadStoryboards = async () => {
   try {
     const res = await storyboardApi.list(dramaId, 1)
     if (res.code === 200) storyboards.value = res.data || []
+    // 加载参考图状态
+    await loadRefImages()
   } catch (e: any) {
     console.error(e)
   } finally {
@@ -312,6 +314,47 @@ const videos = ref<any[]>([])
 const videosLoading = ref(false)
 const selectedVideoModel = ref('MiniMax-Hailuo-2.3')
 const playingVideoId = ref<string | null>(null)
+
+// ====== 参考图生成（FEAT-003） ======
+const refImages = ref<Record<string, any>>({}) // storyboardId -> asset
+const generatingRefImg = ref<string | null>(null)
+
+// 加载参考图状态
+const loadRefImages = async () => {
+  try {
+    const res = await aiApi.getReference(storyboardId)
+    // 遍历所有分镜获取参考图
+    for (const sb of storyboards.value) {
+      const r = await aiApi.getReference(sb.id)
+      if (r.code === 200 && r.data) {
+        refImages.value[sb.id] = r.data
+      }
+    }
+  } catch (e) {
+    console.error('[RefImg] load failed', e)
+  }
+}
+
+// 生成参考图
+const generateRefImage = async (shot: any) => {
+  if (!shot.characterId && !shot.characterIds && !shot.sceneId) {
+    AMessage.warning('该分镜未设置角色或场景，无法生成参考图'); return
+  }
+  generatingRefImg.value = shot.id
+  try {
+    const res = await aiApi.generateReference({ storyboardId: shot.id })
+    if (res.code === 200 && res.data) {
+      refImages.value[shot.id] = res.data
+      AMessage.success('参考图生成成功')
+    } else {
+      AMessage.error(res.message || '生成失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '参考图生成失败')
+  } finally {
+    generatingRefImg.value = null
+  }
+}
 
 // 视频模型选项
 const videoModels = [
@@ -576,19 +619,31 @@ onUnmounted(() => {
               <a-tag v-if="shot.shotDirection" color="#eff6ff15" class="!text-blue-400/70 !rounded-[10px] !text-[9px] sm:!text-[10px]">{{ shot.shotDirection }}</a-tag>
             </div>
             <!-- 图片标记 -->
-            <div v-if="shot.gridImageUrl || shot.characterImageUrl || shot.sceneImageUrl" class="mt-2 flex gap-1">
+            <div v-if="shot.gridImageUrl || shot.characterImageUrl || shot.sceneImageUrl || refImages[shot.id]" class="mt-2 flex gap-1 flex-wrap">
               <span v-if="shot.sceneImageUrl" title="有场景图" class="text-[10px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded">场景图</span>
               <span v-if="shot.characterImageUrl" title="有角色图" class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">角色图</span>
               <span v-if="shot.gridImageUrl" title="有宫格图" class="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded">宫格图</span>
+              <span v-if="refImages[shot.id]" title="有参考图" class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 text-orange-400 rounded">参考图</span>
             </div>
           </div>
           <!-- 生成视频按钮：action字段直接可生成，图片仅作增强参考 -->
-          <div class="mt-3 pt-2 border-t border-[#2a2a2a]">
+          <div class="mt-3 pt-2 border-t border-[#2a2a2a] flex gap-2">
+            <a-button
+              size="small"
+              block
+              :loading="generatingRefImg === shot.id"
+              @click.stop="generateRefImage(shot)"
+              class="flex-1"
+            >
+              <template #icon><PictureOutlined /></template>
+              {{ generatingRefImg === shot.id ? '生成中' : '参考图' }}
+            </a-button>
             <a-button
               type="primary"
               size="small"
               block
               @click.stop="goToVideoGeneration(shot)"
+              class="flex-1"
             >
               <template #icon><VideoCameraOutlined /></template>
               生成视频
