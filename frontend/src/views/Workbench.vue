@@ -159,9 +159,29 @@ const relatedSceneName = ref('')
 const openSbEditor = (shot?: any) => {
   editingSb.value = shot || null
   sbForm.value = shot ? { ...shot } : {}
-  
-  // 加载关联的角色和场景图片
-  if (shot?.characterId) {
+
+  // 解析 characterIds JSON 数组（支持多角色）
+  if (shot?.characterIds) {
+    try {
+      sbForm.value.characterIds = JSON.parse(shot.characterIds)
+    } catch {
+      sbForm.value.characterIds = []
+    }
+  } else {
+    sbForm.value.characterIds = []
+  }
+
+  // 加载关联的角色和场景图片（取多角色中的第一个作为预览）
+  const charIdList = sbForm.value.characterIds || []
+  if (charIdList.length > 0) {
+    const firstChar = characters.value.find(c => c.id === charIdList[0])
+    relatedCharImage.value = firstChar?.imageUrl || ''
+    relatedCharName.value = charIdList.map((id: string) => {
+      const ch = characters.value.find(c => c.id === id)
+      return ch?.name || ''
+    }).filter(Boolean).join(', ') || shot?.characterName || ''
+  } else if (shot?.characterId) {
+    // 兼容旧数据：单个 characterId
     const char = characters.value.find(c => c.id === shot.characterId)
     relatedCharImage.value = char?.imageUrl || ''
     relatedCharName.value = char?.name || shot.characterName || '未知角色'
@@ -169,7 +189,7 @@ const openSbEditor = (shot?: any) => {
     relatedCharImage.value = ''
     relatedCharName.value = shot?.characterName || ''
   }
-  
+
   if (shot?.sceneId) {
     const scene = scenes.value.find(s => s.id === shot.sceneId)
     relatedSceneImage.value = scene?.imageUrl || ''
@@ -178,19 +198,32 @@ const openSbEditor = (shot?: any) => {
     relatedSceneImage.value = ''
     relatedSceneName.value = ''
   }
-  
+
   sbEditorOpen.value = true
 }
 
-// 选择角色后：自动更新关联信息 + 回填 characterImageUrl
-const onSbSelectCharacter = (characterId: string) => {
-  sbForm.value.characterId = characterId
-  const char = characters.value.find(c => c.id === characterId)
-  if (char) {
-    relatedCharImage.value = char.imageUrl || ''
-    relatedCharName.value = char.name || ''
-    sbForm.value.characterName = char.name
-    sbForm.value.characterImageUrl = char.imageUrl || ''
+// 选择角色后：自动更新关联信息 + 回填 characterImageUrl（支持多选）
+const onSbSelectCharacters = (characterIdList: string[]) => {
+  sbForm.value.characterIds = characterIdList
+  // 收集所有选中角色的图片，取第一张作为预览
+  const firstChar = characters.value.find(c => c.id === characterIdList[0])
+  relatedCharImage.value = firstChar?.imageUrl || ''
+  relatedCharName.value = characterIdList.map((id: string) => {
+    const ch = characters.value.find(c => c.id === id)
+    return ch?.name || ''
+  }).filter(Boolean).join(', ')
+  // 同时更新单选字段（兼容旧逻辑）
+  if (characterIdList.length > 0) {
+    const char = characters.value.find(c => c.id === characterIdList[0])
+    if (char) {
+      sbForm.value.characterId = characterIdList[0]
+      sbForm.value.characterName = char.name
+      sbForm.value.characterImageUrl = char.imageUrl || ''
+    }
+  } else {
+    sbForm.value.characterId = null
+    sbForm.value.characterName = ''
+    sbForm.value.characterImageUrl = ''
   }
 }
 
@@ -209,7 +242,14 @@ const onSbSelectScene = (sceneId: string) => {
 const saveShot = async () => {
   if (!editingSb.value?.id) return
   try {
-    const res = await storyboardApi.update(editingSb.value.id, sbForm.value)
+    // 确保 characterIds 是 JSON 字符串格式
+    const submitData = {
+      ...sbForm.value,
+      characterIds: Array.isArray(sbForm.value.characterIds)
+        ? JSON.stringify(sbForm.value.characterIds)
+        : sbForm.value.characterIds
+    }
+    const res = await storyboardApi.update(editingSb.value.id, submitData)
     if (res.code === 200) {
       const idx = storyboards.value.findIndex(s => s.id === editingSb.value!.id)
       if (idx >= 0) storyboards.value[idx] = res.data
@@ -318,11 +358,19 @@ const playingVideoId = ref<string | null>(null)
 // ====== 参考图生成（FEAT-003） ======
 const refImages = ref<Record<string, any>>({}) // storyboardId -> asset
 const generatingRefImg = ref<string | null>(null)
+const previewingRefImg = ref<{ visible: boolean; url: string; title: string }>({ visible: false, url: '', title: '' })
+
+// 预览参考图
+const showRefImagePreview = (shot: any) => {
+  const img = refImages.value[shot.id]
+  if (img?.fileUrl) {
+    previewingRefImg.value = { visible: true, url: img.fileUrl, title: `分镜 ${shot.shotNumber} 参考图` }
+  }
+}
 
 // 加载参考图状态
 const loadRefImages = async () => {
   try {
-    const res = await aiApi.getReference(storyboardId)
     // 遍历所有分镜获取参考图
     for (const sb of storyboards.value) {
       const r = await aiApi.getReference(sb.id)
@@ -335,17 +383,17 @@ const loadRefImages = async () => {
   }
 }
 
-// 生成参考图
-const generateRefImage = async (shot: any) => {
+// 生成参考图（支持强制重新生成：Ctrl+点击）
+const generateRefImage = async (shot: any, force = false) => {
   if (!shot.characterId && !shot.characterIds && !shot.sceneId) {
     AMessage.warning('该分镜未设置角色或场景，无法生成参考图'); return
   }
   generatingRefImg.value = shot.id
   try {
-    const res = await aiApi.generateReference({ storyboardId: shot.id })
+    const res = await aiApi.generateReference({ storyboardId: shot.id, forceRegenerate: force })
     if (res.code === 200 && res.data) {
       refImages.value[shot.id] = res.data
-      AMessage.success('参考图生成成功')
+      AMessage.success(force ? '参考图已重新生成' : '参考图生成成功')
     } else {
       AMessage.error(res.message || '生成失败')
     }
@@ -623,7 +671,7 @@ onUnmounted(() => {
               <span v-if="shot.sceneImageUrl" title="有场景图" class="text-[10px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded">场景图</span>
               <span v-if="shot.characterImageUrl" title="有角色图" class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded">角色图</span>
               <span v-if="shot.gridImageUrl" title="有宫格图" class="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded">宫格图</span>
-              <span v-if="refImages[shot.id]" title="有参考图" class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 text-orange-400 rounded">参考图</span>
+              <span v-if="refImages[shot.id]" title="点击预览" class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 text-orange-400 rounded cursor-pointer hover:bg-orange-500/20" @click.stop="showRefImagePreview(shot)">参考图</span>
             </div>
           </div>
           <!-- 生成视频按钮：action字段直接可生成，图片仅作增强参考 -->
@@ -632,11 +680,12 @@ onUnmounted(() => {
               size="small"
               block
               :loading="generatingRefImg === shot.id"
-              @click.stop="generateRefImage(shot)"
+              @click.stop="(e) => generateRefImage(shot, e.ctrlKey)"
               class="flex-1"
+              title="Ctrl+点击 强制重新生成"
             >
               <template #icon><PictureOutlined /></template>
-              {{ generatingRefImg === shot.id ? '生成中' : '参考图' }}
+              {{ generatingRefImg === shot.id ? '生成中' : (refImages[shot.id] ? '参考图(Ctrl重绘)' : '生成参考图') }}
             </a-button>
             <a-button
               type="primary"
@@ -882,13 +931,14 @@ onUnmounted(() => {
               <UserOutlined /> 关联角色
             </label>
             <a-select
-              v-model:value="sbForm.characterId"
-              placeholder="选择角色..."
+              v-model:value="sbForm.characterIds"
+              mode="multiple"
+              placeholder="选择角色（可多选）..."
               size="small"
               allowClear
               showSearch
               class="w-full"
-              @change="onSbSelectCharacter"
+              @change="onSbSelectCharacters"
             >
               <a-select-option v-for="char in characters" :key="char.id" :value="char.id">
                 {{ char.name }}{{ char.imageUrl ? ' 📸' : '' }}
@@ -936,6 +986,17 @@ onUnmounted(() => {
           </a-form-item>
         </a-form>
       </div>
+    </a-modal>
+
+    <!-- 参考图预览弹窗 -->
+    <a-modal
+      v-model:open="previewingRefImg.visible"
+      :title="previewingRefImg.title"
+      :footer="null"
+      width="800px"
+      centered
+    >
+      <img :src="previewingRefImg.url" class="w-full rounded-lg" />
     </a-modal>
   </div>
 </template>

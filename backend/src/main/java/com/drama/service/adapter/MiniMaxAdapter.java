@@ -321,7 +321,7 @@ public class MiniMaxAdapter implements AiAdapter {
             String bodyJson = objectMapper.writeValueAsString(requestBody);
             log.info("[MiniMax] Image generation with {} reference images: model={}, prompt={}, imageCount={}",
                     validUrls.size(), useModel, prompt.substring(0, Math.min(50, prompt.length())), validUrls.size());
-            log.debug("[MiniMax] Request body: {}", bodyJson);
+            log.info("[MiniMax] Request body: {}", bodyJson);
 
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST,
@@ -339,7 +339,7 @@ public class MiniMaxAdapter implements AiAdapter {
                     log.info("[MiniMax] Image with references generated successfully: {}", imageUrl);
                     return imageUrl;
                 } else {
-                    log.warn("[MiniMax] Image gen with references response has no image_urls, degrading to prompt-only");
+                    log.warn("[MiniMax] ⚠️ Image gen with references response has no image_urls in data, degrading to prompt-only generation (reference images were NOT used)");
                     return generateImage(prompt, model);
                 }
             } else {
