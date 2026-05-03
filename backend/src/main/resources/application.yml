@@ -13,42 +13,69 @@ spring:
 
 mybatis-plus:
   configuration:
+    # 开启驼峰命名自动映射（数据库 snake_case -> Java camelCase）
     map-underscore-to-camel-case: true
+    # SQL 日志输出到控制台（生产环境建议改为 slf4j 或关闭）
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
+      # ID 类型为雪花算法生成（分布式 ID）
       id-type: assign_id
+      # 逻辑删除字段名
       logic-delete-field: deleted
+      # 逻辑删除值（删除时设为 1）
       logic-delete-value: 1
+      # 未删除值
       logic-not-delete-value: 0
+  # MyBatis Mapper XML 文件路径
   mapper-locations: classpath*:/mapper/**/*.xml
 
+# ====== 文件存储配置 ======
 file:
   upload:
+    # 文件上传存储路径（相对于项目根目录）
     path: ./data/storage
+    # 单个文件最大大小
     max-size: 100MB
   static:
+    # 静态资源访问路径
     path: /static
+    # 静态资源 URL 前缀
     url-prefix: /static
 
 # ====== OSS 对象存储配置 ======
 oss:
+  # 是否启用 OSS（false 则使用本地存储）
   enabled: false
+  # 云服务商：aliyun / qcloud / huawei / minio
   provider: aliyun
+  # OSS 区域节点地址
   endpoint: http://oss-cn-chengdu.aliyuncs.com
+  # AccessKey ID（建议使用环境变量而非明文）
   access-key-id: ${OSS_ACCESS_KEY_ID}
+  # AccessKey Secret（建议使用环境变量而非明文）
   access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+  # OSS 存储桶名称
   bucket-name: avater2025
+  # 自定义域名（可选，留空则使用 endpoint）
   custom-domain:
+  # 文件存储的基础路径
   base-path: drama-assets
 
+# ====== CORS 跨域配置 ======
 cors:
+  # 允许访问的源地址（前端开发/生产地址）
   allowed-origins: http://localhost:5173,http://localhost:3013,http://172.16.100.2:5173,http://172.16.100.2:3013
 
+# ====== AI 服务默认提供商配置 ======
 ai:
+  # 文本生成默认提供商：openai / minimax / doubao
   default-text-provider: openai
+  # 图片生成默认提供商：openai / minimax / doubao
   default-image-provider: openai
+  # 视频生成默认提供商：minimax / doubao
   default-video-provider: minimax
+  # TTS 语音合成默认提供商：minimax / doubao / openai
   default-tts-provider: minimax
 
 # ====== FFmpeg 配置 ======
@@ -87,7 +114,11 @@ subtitle:
   # 底部边距(像素)
   margin-v: 40
 
+# ====== Redis 缓存配置 ======
 redis:
+  # Redis Key 前缀（区分不同业务）
   key-prefix: drama
+  # Token 存储 Key 前缀
   token-prefix: token
+  # 缓存数据 Key 前缀
   cache-prefix: cache
