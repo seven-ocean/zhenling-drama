@@ -24,13 +24,18 @@ public class ImageReferenceController {
 
     /**
      * 为指定分镜生成参考图
+     *
+     * @param storyboardId 分镜ID
+     * @param forceRegenerate 是否强制重新生成
+     * @param model 指定的模型（如 "image-01" 或 "doubao-seedream-5-0-260128"，为 null 则使用默认模型）
      */
     @PostMapping("/generate")
     public R<Asset> generate(
             @RequestParam String storyboardId,
-            @RequestParam(required = false, defaultValue = "false") Boolean forceRegenerate) {
-        log.info("[RefImg API] generate: storyboardId={}, forceRegenerate={}", storyboardId, forceRegenerate);
-        Asset asset = imageReferenceService.generateReference(storyboardId, forceRegenerate != null && forceRegenerate);
+            @RequestParam(required = false, defaultValue = "false") Boolean forceRegenerate,
+            @RequestParam(required = false) String model) {
+        log.info("[RefImg API] generate: storyboardId={}, forceRegenerate={}, model={}", storyboardId, forceRegenerate, model);
+        Asset asset = imageReferenceService.generateReference(storyboardId, forceRegenerate != null && forceRegenerate, model);
         return R.ok(asset);
     }
 

@@ -104,14 +104,17 @@ public class AiServiceFactory {
         if (adapter == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "不支持的 AI 厂商: " + provider);
         }
-        
-        // 尝试从数据库加载/刷新配置
+
+        // 尝试从数据库加载/刷新配置（遍历所有类型，找对应provider的配置）
         if (!adapter.isConfigured()) {
-            List<AiConfig> configs = aiConfigService.listByType("text");
-            for (AiConfig config : configs) {
-                if (config.getProvider().equalsIgnoreCase(provider)) {
-                    adapter.initConfig(config);
-                    break;
+            String[] apiTypes = {"text", "image", "video", "tts"};
+            for (String type : apiTypes) {
+                List<AiConfig> configs = aiConfigService.listByType(type);
+                for (AiConfig config : configs) {
+                    if (config.getProvider().equalsIgnoreCase(provider)) {
+                        adapter.initConfig(config);
+                        return adapter;
+                    }
                 }
             }
         }
@@ -135,17 +138,45 @@ public class AiServiceFactory {
 
     /**
      * 图片生成
+     *
+     * @param provider 指定厂商（可为null）
+     * @param prompt 提示词
+     * @param model 模型名称；传入 Seedream 模型时自动路由到 DoubaoAdapter
      */
     public String generateImage(String provider, String prompt, String model) {
-        AiAdapter adapter = provider != null ? getAdapter(provider) : getAdapterByType("image");
+        AiAdapter adapter;
+        if (provider != null) {
+            adapter = getAdapter(provider);
+        } else if (model != null && (model.startsWith("doubao-seedream") || model.startsWith("vc-seedream"))) {
+            adapter = getAdapter("volcengine");
+        } else if (model != null && model.startsWith("image-")) {
+            adapter = getAdapter("minimax");
+        } else {
+            adapter = getAdapterByType("image");
+        }
         return adapter.generateImage(prompt, model);
     }
 
     /**
      * 多图参考图片生成
+     *
+     * @param provider 指定厂商（可为null）
+     * @param prompt 提示词
+     * @param referenceImageUrls 参考图URL列表
+     * @param model 模型名称；传入 Seedream 模型时自动路由到 DoubaoAdapter
      */
     public String generateImageWithReferences(String provider, String prompt, java.util.List<String> referenceImageUrls, String model) {
-        AiAdapter adapter = provider != null ? getAdapter(provider) : getAdapterByType("image");
+        AiAdapter adapter;
+        if (provider != null) {
+            adapter = getAdapter(provider);
+        } else if (model != null && (model.startsWith("doubao-seedream") || model.startsWith("vc-seedream"))) {
+            adapter = getAdapter("volcengine");
+        } else if (model != null && model.startsWith("image-")) {
+            // MiniMax image 模型路由
+            adapter = getAdapter("minimax");
+        } else {
+            adapter = getAdapterByType("image");
+        }
         return adapter.generateImageWithReferences(prompt, referenceImageUrls, model);
     }
 
@@ -203,6 +234,25 @@ public class AiServiceFactory {
     public String generateTTS(String provider, String text, String voiceId, String model) {
         AiAdapter adapter = provider != null ? getAdapter(provider) : getAdapterByType("tts");
         return adapter.generateTTS(text, voiceId, model);
+    }
+
+    /**
+     * 图片分析（Vision）
+     * 调用 AI 多模态模型分析图片内容
+     *
+     * @param prompt 分析提示词
+     * @param imageUrl 图片 URL
+     * @return 分析结果文本
+     */
+    public String analyzeImage(String prompt, String imageUrl) {
+        // 目前只有 MiniMax 支持 Vision，后续可扩展其他厂商
+        AiAdapter adapter = getAdapterByType("text");
+        if (adapter instanceof com.drama.service.adapter.MiniMaxAdapter) {
+            return ((com.drama.service.adapter.MiniMaxAdapter) adapter).analyzeImage(prompt, imageUrl);
+        }
+        throw new com.drama.common.BusinessException(
+                com.drama.common.ResultCode.SERVER_ERROR,
+                "当前配置的 AI 不支持图片分析，请使用 MiniMax 的 text 类型配置");
     }
 
     /**

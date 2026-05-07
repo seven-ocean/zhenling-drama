@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storyboardApi, characterApi, sceneApi, videoApi } from '@/utils/request'
 import { aiApi } from '@/utils/ai'
@@ -19,6 +19,7 @@ import {
   HistoryOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
+  DownOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -390,7 +391,7 @@ const generateRefImage = async (shot: any, force = false) => {
   }
   generatingRefImg.value = shot.id
   try {
-    const res = await aiApi.generateReference({ storyboardId: shot.id, forceRegenerate: force })
+    const res = await aiApi.generateReference({ storyboardId: shot.id, forceRegenerate: force, model: refImgModel.value })
     if (res.code === 200 && res.data) {
       refImages.value[shot.id] = res.data
       AMessage.success(force ? '参考图已重新生成' : '参考图生成成功')
@@ -401,6 +402,38 @@ const generateRefImage = async (shot: any, force = false) => {
     AMessage.error(e?.message || '参考图生成失败')
   } finally {
     generatingRefImg.value = null
+  }
+}
+
+// ====== 批量参考图管理（FEAT-003） ======
+const refPanelCollapsed = ref(true)
+const generatingRefImgAll = ref(false)
+const refImgModel = ref('image-01') // 默认使用 MiniMax Image-01
+
+// 参考图模型选项
+const refImgModelOptions = [
+  { value: 'image-01', label: 'MiniMax Image-01' },
+  { value: 'doubao-seedream-5-0-260128', label: 'Seedream 5.0 (多图融合)' },
+]
+
+const refImagesGenerated = computed(() => Object.keys(refImages.value).length)
+const refImagesTotal = computed(() => storyboards.value.length)
+
+// 全部生成参考图（仅对未生成的分镜）
+const generateAllRefImages = async () => {
+  const unmetShots = storyboards.value.filter((s: any) => !refImages.value[s.id])
+  if (unmetShots.length === 0) {
+    AMessage.warning('所有分镜已生成参考图')
+    return
+  }
+  generatingRefImgAll.value = true
+  try {
+    await Promise.all(unmetShots.map((s: any) => generateRefImage(s, false)))
+    AMessage.success(`批量生成完成（${unmetShots.length}张）`)
+  } catch (e) {
+    AMessage.error('批量生成失败')
+  } finally {
+    generatingRefImgAll.value = false
   }
 }
 
@@ -641,8 +674,88 @@ onUnmounted(() => {
         <a-empty description="暂无分镜，输入剧本后点击 AI 拆解" />
       </div>
 
+      <!-- 批量参考图状态面板（仅在有分镜时显示） -->
+      <div v-else class="mb-3 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden">
+        <!-- Header: 点击展开/收起 -->
+        <div
+          class="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-[#252525] transition-colors"
+          @click="refPanelCollapsed = !refPanelCollapsed"
+        >
+          <div class="flex items-center gap-3">
+            <PictureOutlined class="text-orange-400 text-sm" />
+            <span class="text-sm font-medium text-[#f5f5f5]">参考图批量管理</span>
+            <span class="text-xs px-2 py-0.5 rounded-full" :class="refImagesGenerated === refImagesTotal ? 'bg-green-500/15 text-green-400' : 'bg-orange-500/15 text-orange-400'">
+              已生成 {{ refImagesGenerated }}/{{ refImagesTotal }}
+            </span>
+            <!-- 模型选择器 -->
+            <a-select
+              v-model:value="refImgModel"
+              size="small"
+              class="!w-36 !text-xs"
+              :dropdown-match-select-width="false"
+            >
+              <a-select-option v-for="opt in refImgModelOptions" :key="opt.value" :value="opt.value" class="!text-xs">
+                {{ opt.label }}
+              </a-select-option>
+            </a-select>
+          </div>
+          <div class="flex items-center gap-2">
+            <a-button
+              v-if="!refPanelCollapsed && refImagesGenerated < refImagesTotal"
+              type="primary"
+              size="small"
+              :loading="generatingRefImgAll"
+              @click.stop="generateAllRefImages"
+              class="!text-xs"
+            >
+              <template #icon><PictureOutlined /></template>
+              全部生成（{{ refImagesTotal - refImagesGenerated }}个未生成）
+            </a-button>
+            <span class="text-xs text-[#666] transition-transform duration-200" :class="refPanelCollapsed ? '' : 'rotate-180'">
+              <DownOutlined />
+            </span>
+          </div>
+        </div>
+
+        <!-- 展开内容：分镜列表 -->
+        <div v-if="!refPanelCollapsed" class="border-t border-[#2a2a2a] max-h-60 overflow-y-auto">
+          <div
+            v-for="shot in storyboards"
+            :key="shot.id"
+            class="flex items-center justify-between px-4 py-2 border-b border-[#2a2a2a] last:border-b-0 hover:bg-[#252525] transition-colors"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <span v-if="refImages[shot.id]" class="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs">
+                ✓
+              </span>
+              <span v-else class="w-5 h-5 rounded-full bg-[#333] flex items-center justify-center text-[#666] text-xs">○</span>
+              <div class="min-w-0">
+                <div class="text-xs text-[#d0d0d0] truncate max-w-[200px]">{{ shot.action || '无动作描述' }}</div>
+                <div class="text-[10px] text-[#666]">#{{ shot.shotNumber }} {{ shot.characterName ? '· ' + shot.characterName : '' }}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <template v-if="refImages[shot.id]">
+                <a-button size="small" class="!text-xs !px-2" @click.stop="showRefImagePreview(shot)">
+                  <template #icon><PictureOutlined /></template>
+                  预览
+                </a-button>
+                <a-button size="small" class="!text-xs !px-2" :loading="generatingRefImg === shot.id" @click.stop="generateRefImage(shot, true)">
+                  <template #icon><ReloadOutlined /></template>
+                  重绘
+                </a-button>
+              </template>
+              <a-button v-else size="small" type="primary" class="!text-xs !px-2" :loading="generatingRefImg === shot.id" @click.stop="generateRefImage(shot, false)">
+                <template #icon><PictureOutlined /></template>
+                生成
+              </a-button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 列表 -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         <div v-for="(shot, idx) in storyboards" :key="shot.id"
           class="group p-3 sm:p-4 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] hover:border-[#6366f1]/40 transition-all relative">
           <!-- 点击编辑区域 -->
@@ -680,7 +793,7 @@ onUnmounted(() => {
               size="small"
               block
               :loading="generatingRefImg === shot.id"
-              @click.stop="(e) => generateRefImage(shot, e.ctrlKey)"
+              @click.stop="(e: MouseEvent) => generateRefImage(shot, e.ctrlKey)"
               class="flex-1"
               title="Ctrl+点击 强制重新生成"
             >

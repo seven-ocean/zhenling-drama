@@ -50,6 +50,10 @@ http:
     servers: 8.8.8.8,8.8.4.4  # Google Public DNS
 
 # ====== FFmpeg 配置（开发环境 - Windows）======
+# ffmpeg:
+#   path: "backend/ffmpeg/bin/ffmpeg.exe"
+#   probe-path: "backend/ffmpeg/bin/ffprobe.exe"
+
 ffmpeg:
-  path: "backend/ffmpeg/bin/ffmpeg.exe"
-  probe-path: "backend/ffmpeg/bin/ffprobe.exe"
+  path: "/usr/bin/ffmpeg"
+  probe-path: "/usr/bin/ffprobe"

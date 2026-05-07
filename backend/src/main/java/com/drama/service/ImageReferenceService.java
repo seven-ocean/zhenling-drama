@@ -38,10 +38,11 @@ public class ImageReferenceService {
      *
      * @param storyboardId 分镜ID
      * @param forceRegenerate 是否强制重新生成
+     * @param model 指定的模型（如 null 则使用默认模型）
      * @return 生成的参考图 Asset
      */
     @Transactional
-    public Asset generateReference(String storyboardId, boolean forceRegenerate) {
+    public Asset generateReference(String storyboardId, boolean forceRegenerate, String model) {
         // 1. 查询分镜
         Storyboard sb = storyboardService.getById(storyboardId);
         if (sb == null) {
@@ -111,7 +112,7 @@ public class ImageReferenceService {
         }
 
         // 7. 调用多图参考生成（或降级为纯文字生成）
-        Asset asset = archiveReferenceImageWithReferences(sb.getDramaId(), storyboardId, prompt, referenceImageUrls, sb.getId());
+        Asset asset = archiveReferenceImageWithReferences(sb.getDramaId(), storyboardId, prompt, referenceImageUrls, sb.getId(), model);
 
         log.info("[RefImg] Reference image generated: id={}, storyboardId={}, url={}",
                 asset.getId(), storyboardId, asset.getFileUrl());
@@ -193,19 +194,16 @@ public class ImageReferenceService {
     }
 
     /**
-     * 删除参考图记录
+     * 删除参考图记录（优化：直接单条 DELETE，避免锁等待）
      */
     private void deleteReferenceRecord(String storyboardId) {
+        // 直接删除，不先 SELECT 再逐条 DELETE，减少锁持有时间
         var q = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Asset>();
         q.apply("JSON_VALID(extra_data) = 1")
          .apply("JSON_EXTRACT(extra_data, '$.type') = 'reference_image'")
-         .apply("JSON_EXTRACT(extra_data, '$.storyboardId') = {0}", storyboardId);
-        var list = assetService.list(q);
-        if (list != null && !list.isEmpty()) {
-            for (Asset a : list) {
-                assetService.removeById(a.getId());
-            }
-        }
+         .apply("JSON_EXTRACT(extra_data, '$.storyboardId') = {0}", storyboardId)
+         .last("LIMIT 1");  // 只删一条，减少锁范围
+        assetService.remove(q);
     }
 
     /**
@@ -215,75 +213,96 @@ public class ImageReferenceService {
     private String buildReferencePrompt(Storyboard sb, List<Character> characters, Scene scene) {
         StringBuilder prompt = new StringBuilder();
 
-        // 场景
+        // 身份锁定指令（保持角色一致性，控制在 100 字符以内）
+        prompt.append("Keep exact character appearance: hair, clothes, face unchanged. ");
+
+        // 场景（精简，控制在 150 字符以内）
         if (scene != null && StringUtils.hasText(scene.getPrompt())) {
-            prompt.append("In ").append(scene.getPrompt());
+            String sp = scene.getPrompt();
+            if (sp.length() > 150) sp = sp.substring(0, 150);
+            prompt.append("Scene: ").append(sp);
         } else if (scene != null && StringUtils.hasText(scene.getName())) {
-            prompt.append("In a scene titled ").append(scene.getName());
+            prompt.append("Scene: ").append(scene.getName());
         } else {
-            prompt.append("In a cinematic scene");
+            prompt.append("Cinematic scene");
         }
 
-        // 所有角色（用 and 连接）
+        // 所有角色（精简，控制在 200 字符以内）
         if (characters != null && !characters.isEmpty()) {
             List<String> charDescs = new ArrayList<>();
             for (Character ch : characters) {
                 if (StringUtils.hasText(ch.getAppearancePrompt())) {
-                    charDescs.add(ch.getAppearancePrompt());
+                    String ap = ch.getAppearancePrompt();
+                    if (ap.length() > 100) ap = ap.substring(0, 100);
+                    charDescs.add(ap);
                 } else if (StringUtils.hasText(ch.getName())) {
-                    charDescs.add("a character named " + ch.getName());
+                    charDescs.add(ch.getName());
                 }
             }
             if (!charDescs.isEmpty()) {
-                prompt.append(", with ").append(String.join(" and ", charDescs));
+                prompt.append(". Characters: ").append(String.join(", ", charDescs));
             }
         }
 
-        // 动作描述（来自分镜的action）
+        // 动作描述（精简，控制在 150 字符以内）
         if (StringUtils.hasText(sb.getAction())) {
-            prompt.append(", ").append(sb.getAction());
+            String action = sb.getAction();
+            if (action.length() > 150) action = action.substring(0, 150);
+            prompt.append(". Action: ").append(action);
         }
 
-        // 台词（可作为画面补充）
+        // 台词（精简，控制在 100 字符以内）
         if (StringUtils.hasText(sb.getDialogue())) {
-            prompt.append(". The character says: \"").append(sb.getDialogue()).append("\"");
+            String dialogue = sb.getDialogue();
+            if (dialogue.length() > 100) dialogue = dialogue.substring(0, 100);
+            prompt.append(". \"Caps: ").append(dialogue).append("\"");
         }
 
-        // 镜头类型（增强构图）
+        // 镜头类型
         if (StringUtils.hasText(sb.getShotType())) {
             String shotTypePrompt = switch (sb.getShotType()) {
-                case "wide" -> ", establishing wide shot";
-                case "medium" -> ", medium shot";
-                case "close-up" -> ", close-up shot";
-                case "extreme-close-up" -> ", extreme close-up";
+                case "wide" -> "Wide shot";
+                case "medium" -> "Medium shot";
+                case "close-up" -> "Close-up shot";
+                case "extreme-close-up" -> "Extreme close-up";
                 default -> "";
             };
-            prompt.append(shotTypePrompt);
+            if (!shotTypePrompt.isEmpty()) {
+                prompt.append(". ").append(shotTypePrompt);
+            }
         }
 
-        // 运镜（可选）
+        // 运镜（精简）
         if (StringUtils.hasText(sb.getShotDirection())) {
-            prompt.append(". Camera movement: ").append(sb.getShotDirection());
+            String dir = sb.getShotDirection();
+            if (dir.length() > 50) dir = dir.substring(0, 50);
+            prompt.append(". Camera: ").append(dir);
         }
 
-        // 固定后缀：电影感
-        prompt.append(". Cinematic lighting, film still quality, 16:9 aspect ratio, anime style, detailed");
+        // 固定后缀（精简，控制在 80 字符以内）
+        prompt.append(". Cinematic, 16:9, anime style");
 
-        return prompt.toString();
+        String result = prompt.toString();
+        // 二次保护：超过 1500 字符则截断
+        if (result.length() > 1500) {
+            result = result.substring(0, 1490) + "...";
+            log.warn("[RefImg] Prompt truncated to {} chars", result.length());
+        }
+        return result;
     }
 
     /**
-     * 归档参考图到 assets 表（支持多图参考生成）
+     * 归档参考图到 assets 表（支持多图参考生成，可指定模型）
      */
     private Asset archiveReferenceImageWithReferences(String dramaId, String storyboardId, String prompt,
-                                                       List<String> referenceImageUrls, String shotId) {
+                                                       List<String> referenceImageUrls, String shotId, String model) {
         // 调用 AI 多图参考图片生成
         String imageUrl;
         if (referenceImageUrls != null && !referenceImageUrls.isEmpty()) {
-            log.info("[RefImg] Generating with {} reference images", referenceImageUrls.size());
-            imageUrl = imageGenerationService.generateImageWithReferences(prompt, referenceImageUrls);
+            log.info("[RefImg] Generating with {} reference images, model={}", referenceImageUrls.size(), model);
+            imageUrl = imageGenerationService.generateImageWithReferences(prompt, referenceImageUrls, model);
         } else {
-            log.info("[RefImg] No reference images, generating with prompt only");
+            log.info("[RefImg] No reference images, generating with prompt only, model={}", model);
             imageUrl = imageGenerationService.generateImageDirect(prompt);
         }
 

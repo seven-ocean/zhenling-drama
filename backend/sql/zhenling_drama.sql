@@ -48,6 +48,9 @@ INSERT INTO `ai_configs` VALUES ('mm-text-m25', 'minimax', 'text', 'https://api.
 INSERT INTO `ai_configs` VALUES ('mm-tts-speech02hd', 'minimax', 'tts', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', 'speech-02-hd', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-15 00:25:42', 0.00020000, 'MiniMax 语音合成 speech-02-hd 高清版。同步接口，返回音频URL或Hex数据。支持语速/音量/音高调节，默认音色 female-tianmei。单次最长10000字符。');
 INSERT INTO `ai_configs` VALUES ('mm-video-hailuo23', 'minimax', 'video', 'https://api.minimaxi.com/v1', 'sk-api-XXXXXX', '', 10, 1, NULL, 0, '2026-04-15 00:25:42', '2026-04-24 15:41:39', 0.60000000, 'MiniMax 海螺视频模型 Hailuo 2.3（最新旗舰）。异步任务模式：创建→轮询状态→下载。支持 6s/10s 视频、1080P 分辨率、15种运镜指令([推进][拉远][左移]等)。');
 
+-- Seedream 5.0 图片生成（支持多图融合，角色一致性首选）
+INSERT INTO `ai_configs` VALUES ('vc-seedream-5-0', 'volcengine', 'image', 'https://ark.cn-beijing.volces.com/api/v3', '088b464c-802c-4aed-8011-ea3727769c47', 'doubao-seedream-5-0-260128', 5, 1, NULL, 0, '2026-05-05 00:00:00', '2026-05-05 00:00:00', 0.00050000, 'Seedream 5.0 图片生成模型。支持多图融合（角色图+场景图），适合角色一致性场景。支持文生图、图生图、组图生成。尺寸支持 2K/3K/4K。');
+
 -- ----------------------------
 -- Table structure for assets
 -- ----------------------------
