@@ -51,4 +51,21 @@ public class VideoGenerateRequest {
 
     /** 视频分辨率，默认 768P，可选 512P / 768P / 1080P */
     private String resolution = "768P";
+
+    // ========== 豆包/火山引擎 扩展参数 ==========
+
+    /** 音频文件URL（用于火山引擎对口型功能，可选） */
+    private String audioUrl;
+
+    /** 参考视频URL（用于火山引擎运镜/动作参考，可选） */
+    private String videoReferenceUrl;
+
+    /** 参考音频URL（用于火山引擎背景音乐参考，可选） */
+    private String audioReferenceUrl;
+
+    /** 宽高比（用于火山引擎，可选），如 "16:9", "9:16", "1:1" */
+    private String ratio;
+
+    /** 是否生成音频（用于火山引擎，默认 true 启用音画同生） */
+    private Boolean generateAudio = true;
 }

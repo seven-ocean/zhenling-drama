@@ -26,9 +26,16 @@ public class VideoController {
     private final VideoService videoService;
 
     /**
-     * 生成视频（支持多模式）
+     * 生成视频（支持多模式+音频对口型）
      * 接收 JSON Body，统一前后端传参方式
      * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     *
+     * 豆包/火山引擎扩展参数：
+     * - audioUrl: 用户上传的音频文件（用于对口型）
+     * - videoReferenceUrl: 参考视频（用于运镜/动作参考）
+     * - audioReferenceUrl: 参考音频（用于背景音乐）
+     * - ratio: 宽高比
+     * - generateAudio: 是否生成音频（默认 true）
      */
     @PostMapping("/generate")
     public R<Video> generate(@Valid @RequestBody VideoGenerateRequest request) {
@@ -43,6 +50,8 @@ public class VideoController {
         String mode = request.getMode() != null ? request.getMode() : "IMAGE_TO_VIDEO";
         Integer duration = request.getDuration() != null ? request.getDuration() : 6;
         String resolution = request.getResolution() != null ? request.getResolution() : "768P";
+        Boolean generateAudio = request.getGenerateAudio() != null ? request.getGenerateAudio() : true;
+
         return R.ok(videoService.generate(
                 request.getDramaId(),
                 request.getEpisodeNumber(),
@@ -56,7 +65,11 @@ public class VideoController {
                 request.getProvider(),
                 request.getModel(),
                 duration,
-                resolution
+                resolution,
+                request.getAudioUrl(),
+                request.getVideoReferenceUrl(),
+                request.getAudioReferenceUrl(),
+                generateAudio
         ));
     }
 

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:platform.minimaxi.com)",
+      "WebFetch(domain:www.volcengine.com)",
+      "Bash(cat)",
+      "Bash(python3 /tmp/fix_update3.py)",
+      "Bash(unzip -p /mnt/linux_share/maven/repository/com/volcengine/volcengine-java-sdk-ark-runtime/2.0.1/volcengine-java-sdk-ark-runtime-2.0.1.jar com/volcengine/ark/runtime/model/content/generation/CreateContentGenerationTaskRequest.class)",
+      "Bash(unzip -p /mnt/linux_share/maven/repository/com/volcengine/volcengine-java-sdk-ark-runtime/2.0.1/volcengine-java-sdk-ark-runtime-2.0.1.jar com/volcengine/ark/runtime/model/content/generation/GetContentGenerationTaskResponse.class)",
+      "Bash(mvn compile *)"
+    ]
+  }
+}

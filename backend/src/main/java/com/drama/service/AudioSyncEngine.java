@@ -43,6 +43,7 @@ public class AudioSyncEngine {
     public static final String STRATEGY_EXTEND_FREEZE = "EXTEND_VIDEO_FREEZE";
     public static final String STRATEGY_PAD_SILENCE = "PAD_AUDIO_SILENCE";
     public static final String STRATEGY_VIDEO_ONLY = "VIDEO_ONLY";
+    public static final String STRATEGY_VIDEO_WITH_ORIGINAL_AUDIO = "VIDEO_WITH_ORIGINAL_AUDIO";
 
     /** 策略选择阈值：时差 ≤ 此值视为基本匹配（秒） */
     private static final float MATCH_THRESHOLD_SECONDS = 1.0f;
@@ -165,13 +166,19 @@ public class AudioSyncEngine {
         // BUG00037-Fix2: 策略选择修正
         // 旧逻辑：diff ≤ 1s → DIRECT_BLEND(-shortest) — 但如果 audio>video，-shortest会截断音频尾部！
         // 新逻辑：
-        //   ① 无音频 → VIDEO_ONLY
-        //   ② 音频比视频长(哪怕只长0.01s) → EXTEND_FREEZE（冻结帧延展，不丢任何音频数据）
-        //   ③ 视频比音频长且diff≤1s → DIRECT_BLEND（此时-shortest取的是视频长度，音频不会被截）
-        //   ④ 视频明显长于音频(diff>1s) → PAD_SILENCE
+        //   ① 无音频，但视频本身有音频 → VIDEO_WITH_ORIGINAL_AUDIO（保留原视频音画）
+        //   ② 无音频，视频也无音频 → VIDEO_ONLY
+        //   ③ 音频比视频长(哪怕只长0.01s) → EXTEND_FREEZE（冻结帧延展，不丢任何音频数据）
+        //   ④ 视频比音频长且diff≤1s → DIRECT_BLEND（此时-shortest取的是视频长度，音频不会被截）
+        //   ⑤ 视频明显长于音频(diff>1s) → PAD_SILENCE
         String strategy;
         if (localAudioPath == null || localAudioPath.isEmpty() || audioDur <= 0f) {
-            strategy = STRATEGY_VIDEO_ONLY;
+            // 检查视频本身是否有音频流（豆包/火山引擎自带音画）
+            if (videoHasAudioStream(localVideoPath)) {
+                strategy = STRATEGY_VIDEO_WITH_ORIGINAL_AUDIO;
+            } else {
+                strategy = STRATEGY_VIDEO_ONLY;
+            }
         } else if (audioDur > videoDur) {
             // 音频比视频长 → 冻结帧延展（绝对不用 -shortest 截断音频！）
             strategy = STRATEGY_EXTEND_FREEZE;
@@ -182,13 +189,15 @@ public class AudioSyncEngine {
             strategy = STRATEGY_PAD_SILENCE;
         }
 
-        log.info("[AudioSync] Selected strategy: {}", strategy);
+        log.info("[AudioSync] Selected strategy: {} (videoHasAudio={})", strategy, videoHasAudioStream(localVideoPath));
 
         // === Phase 3: 执行对应 FFmpeg 命令 ===
         try {
             switch (strategy) {
                 case STRATEGY_VIDEO_ONLY ->
                     executeVideoOnly(localVideoPath, subtitleAssPath, outputPath);
+                case STRATEGY_VIDEO_WITH_ORIGINAL_AUDIO ->
+                    executeVideoWithOriginalAudio(localVideoPath, subtitleAssPath, outputPath);
                 case STRATEGY_DIRECT_BLEND ->
                     executeDirectBlend(localVideoPath, localAudioPath, subtitleAssPath, outputPath);
                 case STRATEGY_EXTEND_FREEZE ->
@@ -235,7 +244,7 @@ public class AudioSyncEngine {
     }
 
     // ====================================================================
-    // 策略实现：VIDEO_ONLY — 纯画面+字幕
+    // 策略实现：VIDEO_ONLY — 纯画面+字幕（无音频混入）
     // ====================================================================
 
     private void executeVideoOnly(String videoPath, String subtitleAssPath, String outputPath) throws IOException {
@@ -254,6 +263,63 @@ public class AudioSyncEngine {
         cmd.add(outputPath);
         Path workDir = Path.of(outputPath).getParent();
         executeFf(cmd, "VideoOnly", workDir);
+    }
+
+    // ====================================================================
+    // 策略实现：VIDEO_WITH_ORIGINAL_AUDIO — 保留原视频音频 + 字幕
+    // 用于豆包/火山引擎等自带音画的视频
+    // ====================================================================
+
+    private void executeVideoWithOriginalAudio(String videoPath, String subtitleAssPath, String outputPath) throws IOException {
+        List<String> cmd = buildBaseFfmpegCmd();
+        cmd.add("-i");
+        cmd.add(videoPath);
+        String subFileName = prepareSubtitleForFFmpeg(subtitleAssPath, outputPath);
+        if (subFileName != null) {
+            cmd.add("-vf");
+            cmd.add("subtitles='" + subFileName + "'");
+        }
+        cmd.add("-c:v");
+        cmd.add("libx264");
+        // 保留原视频音频（复制流，不重新编码）
+        cmd.add("-c:a");
+        cmd.add("copy");
+        cmd.add("-map");
+        cmd.add("0:v:0");           // 显式取视频流
+        cmd.add("-map");
+        cmd.add("0:a?");            // 可选：如有音频则保留
+        cmd.add(outputPath);
+        Path workDir = Path.of(outputPath).getParent();
+        executeFf(cmd, "VideoWithOriginalAudio", workDir);
+    }
+
+    /**
+     * 检查视频是否包含音频流
+     */
+    private boolean videoHasAudioStream(String videoPath) {
+        try {
+            VideoComposeService.VideoInfo info = videoComposeService.getVideoInfo(videoPath);
+            // 通过检查 VideoInfo 的 audio 相关属性判断
+            // 由于 VideoInfo 没有 hasAudio 字段，用 ffprobe -show_streams 检查
+            ProcessBuilder pb = new ProcessBuilder(
+                    videoComposeService.getFfmpegConfig().getFfprobePath(),
+                    "-v", "quiet",
+                    "-print_format", "json",
+                    "-show_streams",
+                    "-select_streams", "a",
+                    videoPath
+            );
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String output = new String(p.getInputStream().readAllBytes());
+            int exitCode = p.waitFor();
+            if (exitCode != 0) return false;
+            // 如果有音频流，输出会包含 codec_type = audio
+            return output.contains("\"codec_type\"") && output.contains("\"audio\"");
+        } catch (Exception e) {
+            log.warn("[AudioSync] Failed to probe audio stream for {}: {}", videoPath, e.getMessage());
+            return false;
+        }
     }
 
     // ====================================================================

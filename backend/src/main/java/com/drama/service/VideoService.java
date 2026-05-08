@@ -54,7 +54,7 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
                         String provider, String model) {
         return generate(dramaId, episodeNumber, storyboardId, mode, prompt,
                 imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl,
-                provider, model, 6, "768P");
+                provider, model, 6, "768P", null, null, null, true);
     }
 
     /**
@@ -66,18 +66,37 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
                         String mode, String prompt,
                         String imageUrl, String firstFrameUrl, String lastFrameUrl, String subjectImageUrl,
                         String provider, String model, Integer duration, String resolution) {
+        return generate(dramaId, episodeNumber, storyboardId, mode, prompt,
+                imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl,
+                provider, model, duration, resolution, null, null, null, true);
+    }
+
+    /**
+     * 生成视频并保存记录（支持多模式+音频对口型）- 带完整参数
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     */
+    @Transactional
+    public Video generate(String dramaId, int episodeNumber, String storyboardId,
+                        String mode, String prompt,
+                        String imageUrl, String firstFrameUrl, String lastFrameUrl, String subjectImageUrl,
+                        String provider, String model, Integer duration, String resolution,
+                        String audioUrl, String videoReferenceUrl, String audioReferenceUrl,
+                        boolean generateAudio) {
         // 验证必填项
         if ("TEXT_TO_VIDEO".equals(mode)) {
             if (prompt == null || prompt.isEmpty()) {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "文生视频模式需要提供视频描述");
             }
         } else if ("IMAGE_TO_VIDEO".equals(mode)) {
-            if (imageUrl == null || imageUrl.isEmpty()) {
+            if (imageUrl == null || imageUrl.isEmpty() && firstFrameUrl == null && subjectImageUrl == null) {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "图生视频模式需要提供参考图片URL");
             }
         } else if ("FIRST_LAST_FRAME".equals(mode)) {
-            if (firstFrameUrl == null || firstFrameUrl.isEmpty() || lastFrameUrl == null || lastFrameUrl.isEmpty()) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "首尾帧模式需要提供首帧和尾帧图片URL");
+            if ((firstFrameUrl == null || firstFrameUrl.isEmpty()) && (imageUrl == null || imageUrl.isEmpty())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "首尾帧模式需要提供首帧图片URL");
+            }
+            if (lastFrameUrl == null || lastFrameUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "首尾帧模式需要提供尾帧图片URL");
             }
         } else if ("SUBJECT_REFERENCE".equals(mode)) {
             if (subjectImageUrl == null || subjectImageUrl.isEmpty()) {
@@ -103,12 +122,14 @@ public class VideoService extends ServiceImpl<VideoMapper, Video> {
             }
         }
 
-        log.info("Generating video: mode={}, provider={}, model={}", mode, actualProvider, actualModel);
+        log.info("Generating video: mode={}, provider={}, model={}, audioUrl={}, generateAudio={}",
+                mode, actualProvider, actualModel, audioUrl, generateAudio);
 
         try {
-            // 调用AI生成视频（使用多模式接口，带扩展参数）
+            // 调用AI生成视频（使用多模式接口，带扩展参数和音频）
             String videoResult = aiServiceFactory.generateVideoMultiMode(
-                    actualProvider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, actualModel, duration, resolution);
+                    actualProvider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl,
+                    actualModel, duration, resolution, audioUrl, videoReferenceUrl, audioReferenceUrl, generateAudio);
 
             Video video = new Video();
             video.setId(IdUtils.randomId());

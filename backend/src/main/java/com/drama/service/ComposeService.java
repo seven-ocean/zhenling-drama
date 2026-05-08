@@ -123,7 +123,8 @@ public class ComposeService {
                    .eq(Audio::getDeleted, 0)
                    .last("LIMIT 1");
             Audio audio = audioMapper.selectOne(aWrapper);
-            if (audio != null && audio.getAudioUrl() != null) {
+            // 豆包/火山引擎生成的视频已自带音画同步音频，合成时不再混入 TTS 配音
+            if (audio != null && audio.getAudioUrl() != null && !("volcengine".equalsIgnoreCase(video.getProvider()))) {
                 audioPath = audio.getAudioUrl();
             }
         } catch (Exception e) {
@@ -243,7 +244,10 @@ public class ComposeService {
             }
 
             Audio audio = audioMap.get(sb.getId());
-            String audioPath = (audio != null && audio.getAudioUrl() != null) ? audio.getAudioUrl() : null;
+            // 豆包/火山引擎生成的视频已自带音画同步音频，合成时不再混入 TTS 配音
+            String audioPath = ("volcengine".equalsIgnoreCase(video.getProvider()))
+                    ? null
+                    : ((audio != null && audio.getAudioUrl() != null) ? audio.getAudioUrl() : null);
 
             // 提取台词作为字幕
             String dialogue = sb.getDialogue();

@@ -205,12 +205,65 @@ public class AiServiceFactory {
     public String generateVideoMultiMode(String provider, String mode, String prompt,
                                          String imageUrl, String firstFrameUrl, String lastFrameUrl,
                                          String subjectImageUrl, String model, Integer duration, String resolution) {
-        // 目前只有 MiniMax 支持多模式
+        return generateVideoMultiMode(provider, mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl,
+                subjectImageUrl, model, duration, resolution, null, null, null, true);
+    }
+
+    /**
+     * 视频生成（多模式支持，带扩展参数+音频对口型）
+     * 模式：TEXT_TO_VIDEO(文生视频), IMAGE_TO_VIDEO(图生视频), FIRST_LAST_FRAME(首尾帧), SUBJECT_REFERENCE(主体参考)
+     */
+    public String generateVideoMultiMode(String provider, String mode, String prompt,
+                                         String imageUrl, String firstFrameUrl, String lastFrameUrl,
+                                         String subjectImageUrl, String model, Integer duration, String resolution,
+                                         String audioUrl, String videoReferenceUrl, String audioReferenceUrl,
+                                         boolean generateAudio) {
+        // MiniMax 多模式
         if ("minimax".equalsIgnoreCase(provider)) {
             com.drama.service.adapter.MiniMaxAdapter miniMaxAdapter =
                     (com.drama.service.adapter.MiniMaxAdapter) getAdapter("minimax");
-            return miniMaxAdapter.generateVideoMultiMode(mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl, subjectImageUrl, model, duration, resolution);
+            return miniMaxAdapter.generateVideoMultiMode(mode, prompt, imageUrl, firstFrameUrl, lastFrameUrl,
+                    subjectImageUrl, model, duration, resolution);
         }
+
+        // 火山引擎（豆包）视频生成 - 支持音画同生
+        if ("volcengine".equalsIgnoreCase(provider)) {
+            com.drama.service.adapter.DoubaoAdapter doubaoAdapter =
+                    (com.drama.service.adapter.DoubaoAdapter) getAdapter("volcengine");
+
+            log.info("[AiServiceFactory] volcengine video: videoReferenceUrl={}, audioReferenceUrl={}, audioUrl={}, firstFrameUrl={}, lastFrameUrl={}",
+                    videoReferenceUrl, audioReferenceUrl, audioUrl, firstFrameUrl, lastFrameUrl);
+
+            // 解析参考图片
+            String refImage = imageUrl;
+            if (refImage == null || refImage.isEmpty()) {
+                refImage = firstFrameUrl;
+            }
+            if (refImage == null || refImage.isEmpty()) {
+                refImage = subjectImageUrl;
+            }
+
+            // 豆包不支持某些模式时，使用图生视频模式
+            String useMode = mode;
+            if ("SUBJECT_REFERENCE".equals(mode)) {
+                // 豆包没有 subject_reference，用 reference_image 代替
+                useMode = "IMAGE_TO_VIDEO";
+            }
+
+            // 根据模式选择调用方式
+            // 注意：ratio 和 resolution 是两个不同参数，ratio 是宽高比(16:9)，resolution 是分辨率(720P)
+            // 前端只传了 resolution，ratio 使用默认值 16:9
+            if ("FIRST_LAST_FRAME".equals(mode) && lastFrameUrl != null && !lastFrameUrl.isBlank()) {
+                // 首尾帧模式
+                return doubaoAdapter.generateVideoWithFrames(refImage, lastFrameUrl, videoReferenceUrl,
+                        audioReferenceUrl, prompt, duration, "16:9", generateAudio, audioUrl);
+            }
+
+            // 图生视频 / 文生视频模式
+            return doubaoAdapter.generateVideoWithFrames(refImage, null, videoReferenceUrl,
+                    audioReferenceUrl, prompt, duration, "16:9", generateAudio, audioUrl);
+        }
+
         // 其他厂商使用基础版（图生视频）
         AiAdapter adapter = getAdapter(provider);
         if ("TEXT_TO_VIDEO".equals(mode)) {
