@@ -40,6 +40,7 @@ Thumbs.db
 # ===== 排除目录（不纳入版本管理）=====
 .arts/
 .jlsp/
+.claude/
 
 # ===== 本地文档（不纳入版本管理）=====
 daily-record.md
