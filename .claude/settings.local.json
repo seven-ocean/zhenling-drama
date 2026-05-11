@@ -8,7 +8,16 @@
       "Bash(python3 /tmp/fix_update3.py)",
       "Bash(unzip -p /mnt/linux_share/maven/repository/com/volcengine/volcengine-java-sdk-ark-runtime/2.0.1/volcengine-java-sdk-ark-runtime-2.0.1.jar com/volcengine/ark/runtime/model/content/generation/CreateContentGenerationTaskRequest.class)",
       "Bash(unzip -p /mnt/linux_share/maven/repository/com/volcengine/volcengine-java-sdk-ark-runtime/2.0.1/volcengine-java-sdk-ark-runtime-2.0.1.jar com/volcengine/ark/runtime/model/content/generation/GetContentGenerationTaskResponse.class)",
-      "Bash(mvn compile *)"
+      "Bash(mvn compile *)",
+      "Bash(python3 *)",
+      "Bash(awk -F: '/7\\\\.7/ || /^#####/ || /^######/ || /^#######/')",
+      "Bash(awk -F: '$1 >= 1285 && $1 <= 1520')",
+      "Bash(awk -F: '/7\\\\.7[0-9]|^##### |^###### |^#######/')",
+      "Bash(awk -F: '$1 >= 1258 && $1 <= 1510')",
+      "Bash(xxd)",
+      "Bash(xargs -n1 basename)",
+      "Bash(git checkout *)",
+      "Bash(git restore *)"
     ]
   }
 }
