@@ -255,6 +255,7 @@ const selectedVideoModel = ref('MiniMax-Hailuo-2.3')
 // 厂商选项
 const videoProviders = [
   { value: 'minimax', label: 'MiniMax', desc: '海螺视频生成' },
+  { value: 'volcengine', label: '豆包/火山引擎', desc: '音画同生·对口型' },
 ]
 
 // 模型定义（按厂商分类，包含能力限制）
@@ -301,6 +302,16 @@ const videoModelsConfig: Record<string, Array<{
       desc: '基于参考人物生成视频，保持角色一致性',
     },
   ],
+  volcengine: [
+    {
+      value: 'doubao-seedance-1-5-pro-251215',
+      label: 'Seedance 1.5 Pro（音画同生）',
+      modes: ['IMAGE_TO_VIDEO', 'FIRST_LAST_FRAME'],
+      resolutions: ['480P', '720P', '1080P'],
+      durations: [4, 5, 6, 7, 8, 9, 10, 11, 12],
+      desc: '支持图生视频、音画同生（prompt描述音频）、首尾帧、多语言对口型',
+    },
+  ],
 }
 
 // 当前厂商的模型列表
@@ -342,16 +353,21 @@ const videoResolutionOptions = computed(() => {
   // 首尾帧模式不支持 512P 分辨率
   const isFirstLastFrame = videoGenerationMode.value === 'FIRST_LAST_FRAME'
 
-  return [
-    { value: '512P', label: '512P', disabled: !resolutions.includes('512P') || isFirstLastFrame },
-    { value: '768P', label: '768P', disabled: !resolutions.includes('768P') },
-    { value: '1080P', label: '1080P', disabled: !resolutions.includes('1080P') || is10s },
-  ]
+  // 根据模型实际支持的分辨率生成选项
+  const allResolutions = ['480P', '512P', '720P', '768P', '1080P']
+  return allResolutions
+    .filter(r => resolutions.includes(r))
+    .map(r => ({
+      value: r,
+      label: r,
+      disabled: (r === '1080P' && is10s) || (r === '512P' && isFirstLastFrame),
+    }))
 })
 
 // 监听模型变化，自动调整不支持的参数
 watch(selectedVideoModel, (newModel) => {
-  const config = videoModelsConfig.minimax.find(m => m.value === newModel)
+  // 根据当前选中的厂商查找对应配置
+  const config = videoModelsConfig[selectedVideoProvider.value]?.find(m => m.value === newModel)
   if (config) {
     // 如果当前模式不被支持，切换到第一个支持的模式
     if (!config.modes.includes(videoGenerationMode.value)) {
@@ -368,10 +384,24 @@ watch(selectedVideoModel, (newModel) => {
   }
 })
 
-// 监听模式变化，首尾帧模式不支持512P，自动切换到768P
+// 监听厂商切换，重置为该厂商的默认参数
+watch(selectedVideoProvider, (newProvider) => {
+  const models = videoModelsConfig[newProvider]
+  if (models && models.length > 0) {
+    const defaultModel = models[0]
+    selectedVideoModel.value = defaultModel.value
+    videoResolution.value = defaultModel.resolutions[0]
+    videoDuration.value = defaultModel.durations[0]
+    videoGenerationMode.value = defaultModel.modes[0]
+  }
+})
+
+// 监听模式变化，首尾帧模式不支持512P，自动切换到支持的分辨率
 watch(videoGenerationMode, (newMode) => {
   if (newMode === 'FIRST_LAST_FRAME' && videoResolution.value === '512P') {
-    videoResolution.value = '768P'
+    const supported = currentModelConfig.value?.resolutions || []
+    const fallback = supported.find(r => r !== '512P') || videoResolution.value
+    videoResolution.value = fallback
   }
 })
 
@@ -655,12 +685,12 @@ watch(videoStoryboardId, async (newVal) => {
             // 使用最新的配音时长
             const latestAudio = completedAudios[0]
             const audioDuration = Math.ceil(latestAudio.duration)
-            // 根据音频时长选择最接近的视频时长（6s或10s）
-            if (audioDuration <= 6) {
-              videoDuration.value = 6
-            } else {
-              videoDuration.value = 10
-            }
+            const durations = currentModelConfig.value?.durations || [6, 10]
+            // 选择最接近且不超过音频时长的视频时长
+            const closest = durations.reduce((prev, curr) =>
+              Math.abs(curr - audioDuration) < Math.abs(prev - audioDuration) ? curr : prev
+            )
+            videoDuration.value = closest
             AMessage.info(`已根据配音时长(${latestAudio.duration.toFixed(1)}s)自动设置视频时长为${videoDuration.value}秒`)
           }
         }
@@ -712,6 +742,7 @@ const generateVideo = async () => {
       firstFrameUrl: firstFrameUrl.value,
       lastFrameUrl: lastFrameUrl.value,
       subjectImageUrl: subjectImageUrl.value,
+      provider: selectedVideoProvider.value,
       model: selectedVideoModel.value,
       duration: videoDuration.value,
       resolution: videoResolution.value,
@@ -1490,13 +1521,26 @@ const statusLabelMap: Record<string, string> = {
             视频时长
             <span v-if="videoStoryboardId" class="ml-1 px-1.5 py-0.5 bg-blue-500/10 rounded text-[9px] text-blue-400">已根据配音自动设置</span>
           </label>
-          <a-radio-group v-model:value="videoDuration" size="small">
-            <a-radio-button :value="6">6秒</a-radio-button>
-            <a-radio-button :value="10" :disabled="!currentModelConfig?.durations?.includes(10)">10秒</a-radio-button>
-          </a-radio-group>
-          <p v-if="!currentModelConfig?.durations?.includes(10)" class="text-[9px] text-orange-400 mt-1">
-            ⚠️ {{ currentModelConfig?.label }} 仅支持 6 秒视频
-          </p>
+          <!-- Doubao 等支持 4-12s 时使用滑块 -->
+          <div v-if="selectedVideoProvider === 'volcengine'">
+            <a-slider
+              v-model:value="videoDuration"
+              :min="4"
+              :max="12"
+              :marks="{ 4: '4s', 6: '6s', 8: '8s', 10: '10s', 12: '12s' }"
+              :tip-formatter="(v: number) => `${v}秒`"
+            />
+            <div class="text-center text-xs text-[#888]">当前: {{ videoDuration }}秒</div>
+          </div>
+          <!-- MiniMax 等仅支持 6s/10s 时使用单选 -->
+          <div v-else>
+            <a-radio-group v-model:value="videoDuration" size="small">
+              <a-radio-button v-for="d in (currentModelConfig?.durations || [6])" :key="d" :value="d">{{ d }}秒</a-radio-button>
+            </a-radio-group>
+            <p v-if="!(currentModelConfig?.durations?.includes(10))" class="text-[9px] text-orange-400 mt-1">
+              ⚠️ {{ currentModelConfig?.label }} 仅支持 6 秒视频
+            </p>
+          </div>
         </div>
 
         <!-- 视频分辨率选择 -->
@@ -1511,8 +1555,10 @@ const statusLabelMap: Record<string, string> = {
             >{{ opt.label }}</a-radio-button>
           </a-radio-group>
           <p class="text-[9px] text-[#555] mt-1">
-            <span v-if="!currentModelConfig?.resolutions.includes('1080P')">⚠️ {{ currentModelConfig?.label }} 仅支持 {{ currentModelConfig?.resolutions.join('/') }} 分辨率</span>
-            <span v-else-if="videoDuration === 10">⚠️ 10秒视频不支持 1080P 分辨率</span>
+            <span v-if="videoResolutionOptions.length === 0">⚠️ 请先选择模型</span>
+            <span v-else-if="videoResolutionOptions.every((o: any) => o.disabled)">⚠️ 当前时长下无可用分辨率</span>
+            <span v-else-if="!currentModelConfig?.resolutions.includes('1080P')">⚠️ {{ currentModelConfig?.label }} 仅支持 {{ currentModelConfig?.resolutions.join('/') }} 分辨率</span>
+            <span v-else-if="videoDuration === 10 && videoResolution === '1080P'">⚠️ 10秒视频不支持 1080P 分辨率</span>
             <span v-else-if="videoResolution === '512P'" class="text-green-400">✓ 512P 分辨率价格最低，适合快速预览</span>
           </p>
         </div>

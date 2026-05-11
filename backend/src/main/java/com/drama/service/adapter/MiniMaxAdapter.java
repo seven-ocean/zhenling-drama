@@ -515,6 +515,84 @@ public class MiniMaxAdapter implements AiAdapter {
         }
     }
 
+    // ========== 图片分析（Vision）==========
+
+    /**
+     * 图片分析（Vision）
+     * 使用 MiniMax 多模态模型分析图片内容，提取角色外观描述
+     *
+     * @param prompt 分析提示词
+     * @param imageUrl 图片 URL
+     * @return 分析结果文本
+     */
+    public String analyzeImage(String prompt, String imageUrl) {
+        if (!isConfigured()) {
+            throw new AiApiException(-1, "", "MiniMax 未配置，无法进行图片分析", "图片分析(Vision)");
+        }
+
+        try {
+            String url = getBaseUrl() + "/chat/completions";
+            // MiniMax 多模态模型
+            String model = DEFAULT_TEXT_MODEL; // MiniMax-M2.5 支持多模态
+
+            // 构建多模态消息：text + image_url
+            // MiniMax 多模态格式：content 中传入数组
+            String contentJson = String.format(
+                    "[{\"type\":\"text\",\"text\":%s},{\"type\":\"image_url\",\"image_url\":{\"url\":\"%s\"}}]",
+                    objectMapper.writeValueAsString(prompt),
+                    imageUrl
+            );
+
+            String json = String.format(
+                    "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":%s}],\"temperature\":0.7}",
+                    model,
+                    contentJson
+            );
+
+            log.info("[MiniMax] Vision analyze: model={}, imageUrl={}", model, imageUrl);
+            log.debug("[MiniMax] Vision request body: {}", json);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.POST,
+                    new HttpEntity<>(json, authHeaders()),
+                    String.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                JsonNode root = objectMapper.readTree(response.getBody());
+
+                // 检查 MiniMax 错误响应
+                if (root.has("base_resp") && root.path("base_resp").path("status_code").asInt(-1) != 0) {
+                    ensureSuccess(root, "图片分析(Vision)");
+                }
+
+                JsonNode choices = root.path("choices");
+                if (choices.isArray() && choices.size() > 0) {
+                    String text = choices.get(0).path("message").path("content").asText("");
+                    if (!text.isEmpty()) {
+                        log.info("[MiniMax] Vision analyze success: {}", text.substring(0, Math.min(100, text.length())));
+                        return text;
+                    }
+                }
+
+                throw new AiApiException(-1, "", "MiniMax Vision 分析返回为空", "图片分析(Vision)");
+            } else {
+                int httpStatus = response.getStatusCodeValue();
+                String body = response.getBody() != null ? response.getBody().substring(0, Math.min(500, response.getBody().length())) : "";
+                log.error("[MiniMax] Vision analyze failed (HTTP {}): {}", httpStatus, body);
+                throw new AiApiException(httpStatus, body,
+                        "MiniMax Vision 分析请求失败（HTTP " + httpStatus + "）", "图片分析(Vision)");
+            }
+
+        } catch (AiApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[MiniMax] Vision analyze error: {}", e.getMessage(), e);
+            throw new AiApiException(-1, e.getMessage(),
+                    "MiniMax 图片分析异常：" + e.getMessage(), "图片分析(Vision)");
+        }
+    }
+
     // ========== 健康检查 ==========
 
     @Override

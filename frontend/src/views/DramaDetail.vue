@@ -126,6 +126,7 @@ const ttsVoices = ref<{ value: string; label: string }[]>([])
 const previewingVoice = ref(false)
 const previewAudioUrl = ref<string>('')
 const previewAudioRef = ref<HTMLAudioElement | null>(null)
+const extractingAppearance = ref(false)
 
 // MiniMax TTS 官方音色列表（用于下拉选择）- 完整版
 // 参考: https://platform.minimaxi.com/docs/faq/system-voice-id
@@ -536,6 +537,31 @@ const aiGenerateCharImage = async () => {
   }
 }
 
+// 从角色图片提取外观提示词
+const extractAppearancePrompt = async () => {
+  if (!charForm.value.imageUrl) {
+    AMessage.warning('请先上传角色图片')
+    return
+  }
+  extractingAppearance.value = true
+  try {
+    const res = await aiApi.extractAppearancePrompt({
+      imageUrl: charForm.value.imageUrl,
+      characterName: charForm.value.name
+    })
+    if (res.code === 200 && res.data) {
+      charForm.value.appearancePrompt = res.data
+      AMessage.success('已提取外观描述')
+    } else {
+      AMessage.error(res.message || '提取失败')
+    }
+  } catch (e: any) {
+    AMessage.error(e?.message || '提取失败，请检查 AI 配置')
+  } finally {
+    extractingAppearance.value = false
+  }
+}
+
 // AI 生成场景图
 const aiGenerateSceneImage = async () => {
   if (!sceneForm.value.name.trim()) { AMessage.warning('请先填写场景名称'); return }
@@ -893,7 +919,20 @@ const clearImageUrl = (target: 'char' | 'scene') => {
           <a-form-item label="名称" required><a-input v-model:value="charForm.name" placeholder="角色名称" /></a-form-item>
           <a-form-item label="描述"><a-textarea v-model:value="charForm.description" placeholder="角色背景描述..." :rows="2" /></a-form-item>
           <div class="grid grid-cols-2 gap-3">
-            <a-form-item label="外观提示词"><a-input v-model:value="charForm.appearancePrompt" placeholder="用于AI生成角色图" /></a-form-item>
+            <a-form-item label="外观提示词">
+              <div class="flex items-center gap-2">
+                <a-input v-model:value="charForm.appearancePrompt" placeholder="用于AI生成角色图" class="flex-1" />
+                <a-button
+                  v-if="charForm.imageUrl"
+                  @click="extractAppearancePrompt"
+                  :loading="extractingAppearance"
+                  size="small"
+                  class="shrink-0"
+                >
+                  {{ extractingAppearance ? '提取中...' : '提取' }}
+                </a-button>
+              </div>
+            </a-form-item>
             <a-form-item label="台词风格"><a-input v-model:value="charForm.dialogueStyle" placeholder="如：温柔/霸道/幽默" /></a-form-item>
           </div>
 

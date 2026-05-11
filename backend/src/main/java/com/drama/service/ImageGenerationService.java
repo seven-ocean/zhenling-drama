@@ -309,6 +309,40 @@ public class ImageGenerationService {
     }
 
     /**
+     * 多图参考图片生成（指定模型）
+     *
+     * @param prompt 提示词
+     * @param referenceImageUrls 参考图 URL 列表
+     * @param model 模型名称（如 "image-01" 或 "doubao-seedream-5-0-260128"）
+     * @return 生成的图片 URL
+     */
+    public String generateImageWithReferences(String prompt, java.util.List<String> referenceImageUrls, String model) {
+        if (prompt == null || prompt.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "提示词不能为空");
+        }
+        java.util.List<String> validUrls = referenceImageUrls != null
+                ? referenceImageUrls.stream().filter(u -> u != null && !u.isBlank()).collect(java.util.stream.Collectors.toList())
+                : new java.util.ArrayList<>();
+        log.info("[ImageGenWithRefs] Generating with {} reference images, model={}, prompt: {}",
+                validUrls.size(), model, prompt.substring(0, Math.min(100, prompt.length())));
+        try {
+            String imageUrl = aiServiceFactory.generateImageWithReferences(null, prompt, validUrls, model);
+            if (imageUrl == null || imageUrl.isEmpty()) {
+                throw new BusinessException(ResultCode.SERVER_ERROR, "多图参考生成失败：AI返回为空");
+            }
+            return imageUrl;
+        } catch (AiApiException e) {
+            log.error("[ImageGenWithRefs] AI API error: [code={}] {}", e.getVendorCode(), e.getMessage());
+            throw new BusinessException(ResultCode.SERVER_ERROR, e.getMessage());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("[ImageGenWithRefs] Image generation failed: {}", e.getMessage(), e);
+            throw new BusinessException(ResultCode.SERVER_ERROR, "多图参考生成失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 直接生成图片（不保存到资产表）
      * 供 ImageReferenceService 调用
      *

@@ -40,6 +40,7 @@ Thumbs.db
 # ===== 排除目录（不纳入版本管理）=====
 .arts/
 .jlsp/
+.claude/
 
 # ===== 本地文档（不纳入版本管理）=====
 daily-record.md
@@ -56,3 +57,7 @@ backend/ffmpeg/
 backend/jq/
 backend/ffmpeg/
 sync-git.sh
+
+# ===== ONNX 模型文件（不纳入版本管理）=====
+# Face Swap 模型：buffalo_l.onnx, inswapper_128.onnx 等
+backend/src/main/resources/models/
