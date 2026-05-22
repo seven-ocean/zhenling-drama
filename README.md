@@ -14,6 +14,13 @@
 
 </div>
 
+<h2 align="center">短剧合成效果展示</h2>
+
+<video controls width="100%" style="max-width: 800px; display: block; margin: 0 auto;">
+  <source src="./assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 ---
 
 ## 📞 联系我们
