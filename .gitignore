@@ -43,12 +43,13 @@ Thumbs.db
 .claude/
 
 # ===== 本地文档（不纳入版本管理）=====
+start-code-server.sh
 daily-record.md
 operation-manual.md
 product-manual.md
 test-report.md
 TEST.md
-UPDATE.md
+UPDATE*
 
 # ===== Windows FFmpeg（Linux 用系统 FFmpeg）=====
 backend/ffmpeg/
