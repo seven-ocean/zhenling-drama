@@ -17,7 +17,8 @@
       "Bash(xxd)",
       "Bash(xargs -n1 basename)",
       "Bash(git checkout *)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(git lfs *)"
     ]
   }
 }
