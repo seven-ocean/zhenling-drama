@@ -16,7 +16,11 @@
 
 <h2 align="center">短剧合成效果展示</h2>
 
-![短剧合成效果展示](https://raw.githubusercontent.com/seven-ocean/zhenling-drama/commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4)
+<video controls preload="none" width="100%" style="max-width: 800px; display: block; margin: 0 auto;">
+  <source src="https://raw.githubusercontent.com/seven-ocean/zhenling-drama/commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4" type="video/mp4">
+</video>
+
+<p align="center"><a href="https://raw.githubusercontent.com/seven-ocean/zhenling-drama/commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4">▶ 无法播放？点此下载视频</a></p>
 
 ---
 
