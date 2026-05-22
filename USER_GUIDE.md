@@ -1,6 +1,6 @@
 <h2 align="center">短剧合成效果展示</h2>
 
-![短剧合成效果展示](https://raw.githubusercontent.com/seven-ocean/zhenling-drama/commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4)
+![短剧合成效果展示](https://cdn.jsdelivr.net/gh/seven-ocean/zhenling-drama@commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4)
 
 # 臻灵短剧平台 · 用户操作手册
 

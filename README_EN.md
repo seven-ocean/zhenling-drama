@@ -14,7 +14,7 @@
 
 </div>
 
-![Short Drama Composition Showcase](https://raw.githubusercontent.com/seven-ocean/zhenling-drama/commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4)
+![Short Drama Composition Showcase](https://cdn.jsdelivr.net/gh/seven-ocean/zhenling-drama@commercial/assets/%E7%9F%AD%E5%89%A7%E5%90%88%E6%88%90%E6%95%88%E6%9E%9CV1.mp4)
 
 <div align="center" style="margin-top: 8px; color: #666; font-size: 14px;">Short Drama Composition Showcase</div>
 
